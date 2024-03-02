@@ -3169,6 +3169,14 @@ sub format_output {
             } else {
               print FOUT sprintf("%-$widths[$i]s", $data);
             }
+            $res->[$i] = undef; # 20240302.LZS
+            # There is some problem within Perl/DBI/Oracle-DBD (I don't know which)
+            # which is related to UTF-8 and string-length-caching 'magic'.
+            # Maybe somewhere function 'Perl_sv_setpvn_mg' should be called instead
+            # of 'Perl_sv_setpvn'
+            # Or 'Perl_sv_setpvn' should internally call the '_mg' version.
+            # Anyway, when every system on the world will have been fixed,
+            # this workaround will be removed.
           }
           print FOUT "\n";
     
