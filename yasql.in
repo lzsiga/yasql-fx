@@ -3112,7 +3112,7 @@ sub format_output {
           else
           {
             print FOUT " " if $i > 0;
-            if($types->[$i] == 3 || $types->[$i] == 8) {
+            if($types->[$i] == 3 || $types->[$i] == 8) { # SQLT_INT, SQLT_LNG
               print FOUT sprintf("%$widths[$i]s", $fields->[$i]);
             } else {
               print FOUT sprintf("%-$widths[$i]s", $fields->[$i]);
@@ -3160,11 +3160,11 @@ sub format_output {
           $count++;
           for( my $i = 0; $i < @$fields; $i++ ) {
             print FOUT " " if $i > 0;
-            my $data = substr($res->[$i],0,$widths[$i]);
+            my $data = $res->[$i]; # 20240302.LZS Removed 'substr': we don't truncate the data any more
             # Strip out plain ole \r's since SQL*Plus seems to...
             $data =~ s/\r//g;
             $data = 'NULL' unless defined $data;
-            if($types->[$i] == 3 || $types->[$i] == 8) {
+            if($types->[$i] == 3 || $types->[$i] == 8) { # SQLT_INT, SQLT_LNG
               print FOUT sprintf("%$widths[$i]s", $data);
             } else {
               print FOUT sprintf("%-$widths[$i]s", $data);

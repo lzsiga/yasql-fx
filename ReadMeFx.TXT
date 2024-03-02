@@ -4,3 +4,5 @@
   * Change 'do query_err' to 'query_err' in yasql.in (two occurances)
   * Workaround for some utf8-string-length-caching-magic problem
     via setting the variable in question to 'undef'
+  * Removed 'substr': we don't truncate the data any more,
+    not even long data
