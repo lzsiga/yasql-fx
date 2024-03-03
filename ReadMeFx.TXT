@@ -8,3 +8,5 @@
     not even long data. (Note: the previous problem doesn't manifest
     without substr. NB A test-program should be constructed.)
   * Version number 1.83-1
+  * Mind you, changelog is tracked in four(?) different files,
+    I updated only yasql.in
