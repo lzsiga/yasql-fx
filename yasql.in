@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83 2005/05/09 16:57:13 qzy Exp qzy $
+# $Id: yasql,v 1.83-1 2024/03/03 07:00:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -114,7 +114,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83 2005/05/09 02:07:13 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-1 2024/03/03 07:00:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -237,7 +237,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83 2005/05/09 02:07:13 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-1 2024/03/03 07:00:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -4251,6 +4251,14 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-1 2024/03/03 07:00:00 lzs
+Change 'do query_err' to 'query_err' in yasql.in (two occurances)
+Workaround for some utf8-string-length-caching-magic problem
+  via setting the variable in question to 'undef'
+Removed 'substr': we don't truncate the data any more,
+  not even long data. (Note: the previous problem doesn't manifest
+  without substr.)
+
 Revision 1.83  2005/05/09 16:57:13  qzy
 Fixed the 'DECIMAL' problem with describe command.
 Added sql mode with \i (patch by Ed Avis).

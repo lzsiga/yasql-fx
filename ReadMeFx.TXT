@@ -5,4 +5,6 @@
   * Workaround for some utf8-string-length-caching-magic problem
     via setting the variable in question to 'undef'
   * Removed 'substr': we don't truncate the data any more,
-    not even long data
+    not even long data. (Note: the previous problem doesn't manifest
+    without substr. NB A test-program should be constructed.)
+  * Version number 1.83-1
