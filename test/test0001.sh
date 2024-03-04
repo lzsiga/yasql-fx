@@ -34,6 +34,11 @@ if [ -z "$YaSql" ]; then
     YaSql=$(which yasql)
 fi
 
+# the problem appears only when NLS_LANG is set to AL32UTF8
+
+export LC_CTYPE=en_US.UTF-8
+export NLS_LANG=american_america.AL32UTF8
+
 /usr/local/bin/perl -Ca "$YaSql" $(cat ~/secret/scott.dbuid) <<DONE
 SELECT 'alpha' nam FROM (SELECT LEVEL lvl FROM dual CONNECT BY LEVEL <= 1001) union all
 SELECT 'bet'   nam FROM (SELECT LEVEL lvl FROM dual CONNECT BY LEVEL <= 11) union all
