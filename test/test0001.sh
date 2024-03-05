@@ -38,6 +38,7 @@ fi
 
 export LC_CTYPE=en_US.UTF-8
 export NLS_LANG=american_america.AL32UTF8
+export NLS_NCHAR=AL32UTF8
 
 /usr/local/bin/perl -Ca "$YaSql" $(cat ~/secret/scott.dbuid) <<DONE
 SELECT 'alpha' nam FROM (SELECT LEVEL lvl FROM dual CONNECT BY LEVEL <= 1001) union all
