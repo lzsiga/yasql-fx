@@ -6,7 +6,7 @@
     via setting the variable in question to 'undef'
   * Removed 'substr': we don't truncate the data any more,
     not even long data. (Note: the previous problem doesn't manifest
-    without substr. NB A test-program should be constructed.)
+    without substr. See test-script test/test0001.sh)
   * Version number 1.83-1
   * Mind you, changelog is tracked in four(?) different files,
     I updated only yasql.in
