@@ -1144,54 +1144,92 @@ sub parse_input {
   # also wipes out the qbuffer at this time.
   #
   # It returns a prompt (like 'SQL> ' or '  -> ') if successfull, 0 otherwise
-  
+
+  my $ptnMain=
+    qr/(
+      ['"]               | # match quotes
+      --                 | # single line comment
+      ;                  | # the ';' terminator
+      ^\s*\/\s*$         | # the slash terminator at end of string
+      \\[GgsSi]          | # one of the complex terminators
+      \/\*                 # start of multiline comment
+    )/ix;
+  my $ptnQuoteS= qr/(')/;
+  my $ptnQuoteD= qr/(")/;
+  my $ptnCmLine= qr/(.*)/;
+  my $ptnCmTerm= qr/(\*\/)/;
+
+  my $rest= $input;
+  chomp($rest);
   # now we need to check for a terminator, if we're not inquotes
-  while( $input =~ m/
-                     (                             #
-                       ['"]                        # match quotes
-                        |                          #  or
-                       ;                           # the ';' terminator
-                        |                          #  or
-                       ^\s*\/\s*$                  # the slash terminator at end of string
-                        |                          #  or
-                       \\[GgsSi]                   # one of the complex terminators
-                        |                          #  or
-                       (?:^|\s+)create\s+          # create
-                        |                          #  or
-                       (?:^|\s+)function\s+        # function
-                	|                          #  or
-                       (?:^|\s+)package\s+         # package
-                	|                          #  or
-                       (?:^|\s+)package\s+body\s+  # package body
-                        |                          #  or
-                       (?:^|\s+)procedure\s+       # procedure
-                        |                          #  or
-                       (?:^|\s+)trigger\s+         # trigger
-                        |                          #  or
-                       (?:^|\s+)declare\s+         # declare
-                        |                          #  or
-                       (?:^|\s+)begin\s+           # begin
-                        |                          #  or
-                       \/\*                        # start of multiline comment
-                        |                          #  or
-                       \*\/                        # end of multiline comment
-                     )/gix )
-  {
+  while ($rest =~ /\S/ ) {
+    debugmsg(4, "Main loop in 'parse_input' rest=[$rest] incomment=[$incomment] inquotes=[$inquotes]");
+    my $pattern= $ptnMain;
+    if($inquotes) {
+        if    ($quote eq '\'') { $pattern= $ptnQuoteS; }
+        elsif ($quote eq '"')  { $pattern= $ptnQuoteD; }
+    } elsif ($incomment) {
+        if    ($incomment==1)  { $pattern= $ptnCmTerm; }
+        elsif ($incomment==2)  { $pattern= $ptnCmLine; }
+    }
+#   debugmsg(4, "Before matching pattern=[$pattern]");
 
-    my($pre, $match, $post) = ($`, $1, $'); 
+    $rest =~ m/$pattern/i;
+
     # PREMATCH, MATCH, POSTMATCH
-    debugmsg(1, "parse: [$pre] [$match] [$post]");
+    my ($pre, $match, $post) = ('', '', '');
+    $pre=   $` if (defined($`));
+    $match= $1 if (defined($1));
+    $post=  $' if (defined($'));
+    debugmsg(1, "parse: pre=[$pre] match=[$match] post=[$post] incomment=$incomment inquotes=$inquotes");
 
-    if( ($match eq '\'' || $match eq '"')) {
-      if(!$quote || $quote eq $match) {
-        $inquotes = ($inquotes ? 0 : 1);
-        if($inquotes) {
-          $quote = $match;
+    if ($incomment) {
+      if ($incomment==1) {  # multiline comment
+        if ($match eq '*/') {
+          $incomment= 0;
+          $qbuffer .= $pre.$match;
+          $rest= $post;
         } else {
-          undef($quote);
+          $qbuffer .= $rest;
+          $rest= '';
         }
+      } else {              # singleline comment (processed)
+        $incomment= 0;
+        $qbuffer .= $pre.$match;
+        $rest= $post;
       }
-    } elsif($match =~ /create/ix) {
+      next;
+    } elsif ($inquotes) {
+      if ($match eq $quote) {
+        $inquotes= 0;
+        $qbuffer .= $pre.$match;
+        $rest= $post;
+      } else {
+        $qbuffer .= $rest;
+        $rest= '';
+      }
+      next;
+    }
+
+    if ($match eq '') {
+      $qbuffer .= $rest;
+      $rest= '';
+      next;
+    } elsif ($match eq '\'' || $match eq '"') {
+      $inquotes= 1;
+      $quote= $match;
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
+    } elsif ($match eq '/*' || $match eq '--') {
+      if ($match eq '/*') { $incomment= 1; }
+      else                { $incomment= 2; }
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
+    }
+
+    if($match =~ /create/ix) {
       $increate = 1;
     } elsif(!$increate &&
             $match =~ /function|package|package\s+body|procedure|trigger/ix)
@@ -1201,13 +1239,8 @@ sub parse_input {
 	    ($increate && $match =~ /function|package|package\s+body|procedure|trigger/ix))
     {
       $inplsqlblock = 1;
-    } elsif($match =~ /^\/\*/) {
-      $incomment = 1;
-    } elsif($match =~ /^\*\//) {
-      $incomment = 0;
-    } elsif(!$inquotes && !$incomment && $match !~ /^--/ &&
-           ($match =~ /^\s*\/\s*$/ || !$inplsqlblock))
-    {
+    } elsif($match =~ /^\s*\/\s*$/ || !$inplsqlblock)
+    {                                                     # this is huge, should go into a function
       $qbuffer .= $pre;
       debugmsg(4,"qbuffer IN: [$qbuffer]");
       my $terminator = $match;
@@ -1222,7 +1255,7 @@ sub parse_input {
                  (.*)              # Catch everything else
                  $                 # End-Of-Line
                /x;
-      debugmsg(3,"1: [$1] 2: [$2] 3: [$3] 4: [$4]");
+      debugmsg(3,"after command terminator 1: [$1] 2: [$2] 3: [$3] 4: [$4]");
 
       my($num_rows,$op,$op_text,$extra) = ($1,$2,$3,$4);
 
@@ -1348,7 +1381,7 @@ sub parse_input {
     }
   }
 
-  $qbuffer .= $input . "\n";
+  $qbuffer .=  "\n";
 
   debugmsg(4,"qbuffer: [$qbuffer], input: [$input]");
 
