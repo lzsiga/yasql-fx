@@ -1,3 +1,7 @@
+2024.03.xx. Lorinczy Zsigmond
+  * Refactoring encoding (cf 'Wide character' problems)
+  * Refactoring lexical parsing (cf 'semicolon in comment' problem)
+
 2024.03.02. Lorinczy Zsigmond
   * Forked from https://sourceforge.net/projects/yasql/ version 1.83
     renamed as 'yasql-fx' (fixed)

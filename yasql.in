@@ -40,6 +40,8 @@ use Term::ReadLine;
 use Data::Dumper;
 use Benchmark;
 use Getopt::Long;
+use Encode qw(is_utf8 decode);
+use POSIX qw(locale_h);
 
 # Load DBD::Oracle early to work around SunOS bug. See
 # http://article.gmane.org/gmane.comp.lang.perl.modules.dbi.general/207
@@ -56,6 +58,7 @@ use vars qw(
   $incomment $csv_filehandle_open $csv_max_lines $nohires $notextcsv $csv
   $sysconf $sysconfdir $quitting $sigintcaught %conf %prompt $prompt_length
   @sqlpath %set $opt_batch $opt_notbatch $opt_headers
+  $lc_ctype_charset $lc_ctype_encoding
 );
 
 select((select(STDOUT), $| = 1)[0]); #unbuffer STDOUT
@@ -310,7 +313,7 @@ sub init {
   if ($conf{server_output} > 1000000) {
     $conf{server_output} = 1000000;
   }
-  
+
   ($conf{history_file}) = glob($conf{history_file});
 
   debugmsg(3,"Conf: [" . Dumper(\%conf) . "]");
@@ -319,6 +322,8 @@ sub init {
   unless($notextcsv) {
     $csv = new Text::CSV_XS;
   }
+
+  init_charset();
 
   # Change the process name to just 'yasql' to somewhat help with security.
   # This is not bullet proof, nor is it supported on all platforms.  Those that
@@ -415,6 +420,20 @@ sub init {
 
   # set up the pager
   $conf{pager} = $ENV{PAGER} if $ENV{PAGER};
+}
+
+sub init_charset {
+  my $lc_ctype= setlocale(LC_CTYPE, "");
+  my $lc_regex= qr/^(([a-zA-Z0-9]+))?(_(\w)+)?(\.([a-zA-Z0-9_-]+))?(\@(\w+))?$/;
+  if ($lc_ctype =~ /$lc_regex/ && $6 ne '') {
+    $lc_ctype_charset= $6;
+    $lc_ctype_encoding= ":encoding($lc_ctype_charset)";
+    debugmsg(1, "Charset from 'setlocale(LC_CTYPE)' is $lc_ctype_charset\n");
+
+    binmode(STDIN,  $lc_ctype_encoding);
+    binmode(STDOUT, $lc_ctype_encoding);
+    binmode(STDERR, $lc_ctype_encoding);
+  }
 }
 
 sub setup_term {
@@ -778,7 +797,9 @@ sub db_connect {
   my $attributes = {
     RaiseError => 0, PrintError => 0, AutoCommit => $conf{auto_commit}, 
     LongReadLen => $conf{long_read_len}, LongTruncOk => $conf{long_trunc_ok},
-    ora_session_mode => $ora_session_mode
+    ora_session_mode => $ora_session_mode,
+    ora_charset => 'AL32UTF8',
+    ora_ncharset => 'AL32UTF8'
   };
 
   if($connect_string eq 'external') {
@@ -1050,6 +1071,9 @@ sub interface {
   # Check if we were interactively called, or do we need to process STDIN
   if(-t STDIN) {
     while(defined($input = $term->readline($prompt))) {
+      if (!Encode::is_utf8($input) && $lc_ctype_charset ne '') {
+        $input= Encode::decode($lc_ctype_charset, $input);
+      }
       $sigintcaught = 0;
       $prompt = process_input($input, $prompt) || get_prompt();
       setup_sigs();
@@ -1132,115 +1156,8 @@ sub process_input {
   return($nprompt);
 }
 
-sub parse_input {
-  my($input) = @_;
-  debugmsg(3, "parse_input called", @_);
-  # this takes input and parses it.  It looks for single quotes (') and double
-  # quotes (") and presents prompts accordingly.  It also looks for query 
-  # terminators, such as semicolon (;), forward-slash (/) and back-slash-g (\g).
-  # If it finds a query terminator, then it pushes any text onto the query
-  # buffer ($qbuffer) and then passes the entire query buffer, as well as the
-  # format type, determined by the terminator type, to the query() function.  It
-  # also wipes out the qbuffer at this time.
-  #
-  # It returns a prompt (like 'SQL> ' or '  -> ') if successfull, 0 otherwise
-
-  my $ptnMain=
-    qr/(
-      ['"]               | # match quotes
-      --                 | # single line comment
-      ;                  | # the ';' terminator
-      ^\s*\/\s*$         | # the slash terminator at end of string
-      \\[GgsSi]          | # one of the complex terminators
-      \/\*                 # start of multiline comment
-    )/ix;
-  my $ptnQuoteS= qr/(')/;
-  my $ptnQuoteD= qr/(")/;
-  my $ptnCmLine= qr/(.*)/;
-  my $ptnCmTerm= qr/(\*\/)/;
-
-  my $rest= $input;
-  chomp($rest);
-  # now we need to check for a terminator, if we're not inquotes
-  while ($rest =~ /\S/ ) {
-    debugmsg(4, "Main loop in 'parse_input' rest=[$rest] incomment=[$incomment] inquotes=[$inquotes]");
-    my $pattern= $ptnMain;
-    if($inquotes) {
-        if    ($quote eq '\'') { $pattern= $ptnQuoteS; }
-        elsif ($quote eq '"')  { $pattern= $ptnQuoteD; }
-    } elsif ($incomment) {
-        if    ($incomment==1)  { $pattern= $ptnCmTerm; }
-        elsif ($incomment==2)  { $pattern= $ptnCmLine; }
-    }
-#   debugmsg(4, "Before matching pattern=[$pattern]");
-
-    $rest =~ m/$pattern/i;
-
-    # PREMATCH, MATCH, POSTMATCH
-    my ($pre, $match, $post) = ('', '', '');
-    $pre=   $` if (defined($`));
-    $match= $1 if (defined($1));
-    $post=  $' if (defined($'));
-    debugmsg(1, "parse: pre=[$pre] match=[$match] post=[$post] incomment=$incomment inquotes=$inquotes");
-
-    if ($incomment) {
-      if ($incomment==1) {  # multiline comment
-        if ($match eq '*/') {
-          $incomment= 0;
-          $qbuffer .= $pre.$match;
-          $rest= $post;
-        } else {
-          $qbuffer .= $rest;
-          $rest= '';
-        }
-      } else {              # singleline comment (processed)
-        $incomment= 0;
-        $qbuffer .= $pre.$match;
-        $rest= $post;
-      }
-      next;
-    } elsif ($inquotes) {
-      if ($match eq $quote) {
-        $inquotes= 0;
-        $qbuffer .= $pre.$match;
-        $rest= $post;
-      } else {
-        $qbuffer .= $rest;
-        $rest= '';
-      }
-      next;
-    }
-
-    if ($match eq '') {
-      $qbuffer .= $rest;
-      $rest= '';
-      next;
-    } elsif ($match eq '\'' || $match eq '"') {
-      $inquotes= 1;
-      $quote= $match;
-      $qbuffer .= $pre.$match;
-      $rest= $post;
-      next;
-    } elsif ($match eq '/*' || $match eq '--') {
-      if ($match eq '/*') { $incomment= 1; }
-      else                { $incomment= 2; }
-      $qbuffer .= $pre.$match;
-      $rest= $post;
-      next;
-    }
-
-    if($match =~ /create/ix) {
-      $increate = 1;
-    } elsif(!$increate &&
-            $match =~ /function|package|package\s+body|procedure|trigger/ix)
-    {
-      # do nothing if we're not in a create statement
-    } elsif(($match =~ /declare|begin/ix) ||
-	    ($increate && $match =~ /function|package|package\s+body|procedure|trigger/ix))
-    {
-      $inplsqlblock = 1;
-    } elsif($match =~ /^\s*\/\s*$/ || !$inplsqlblock)
-    {                                                     # this is huge, should go into a function
+sub execute_query {
+      my ($pre, $match, $post) = @_;
       $qbuffer .= $pre;
       debugmsg(4,"qbuffer IN: [$qbuffer]");
       my $terminator = $match;
@@ -1378,6 +1295,137 @@ sub parse_input {
         # return a 'new' prompt
         return(get_prompt());
       }
+}
+
+sub parse_input {
+  my($input) = @_;
+  debugmsg(3, "parse_input called", @_);
+  # this takes input and parses it.  It looks for single quotes (') and double
+  # quotes (") and presents prompts accordingly.  It also looks for query 
+  # terminators, such as semicolon (;), forward-slash (/) and back-slash-g (\g).
+  # If it finds a query terminator, then it pushes any text onto the query
+  # buffer ($qbuffer) and then passes the entire query buffer, as well as the
+  # format type, determined by the terminator type, to the query() function.  It
+  # also wipes out the qbuffer at this time.
+  #
+  # It returns a prompt (like 'SQL> ' or '  -> ') if successfull, 0 otherwise
+
+  my $ptnMain=
+    qr/(
+      ['"]               | # match quotes
+      --                 | # single line comment
+      ;                  | # the ';' terminator
+      \\[GgsSi]          | # one of the complex terminators
+      \/\*               | # start of multiline comment
+      \w+                  # words, numbers, ...
+    )/ix;
+  my $ptnQuoteS= qr/(')/;
+  my $ptnQuoteD= qr/(")/;
+  my $ptnCmLine= qr/(.*)/;
+  my $ptnCmTerm= qr/(\*\/)/;
+  my $ptnBlkEnd= qr/(^\s*\/\s*$)/;
+
+  if ($input =~ /$ptnBlkEnd/) {
+    return execute_query('', $input, '');
+  }
+
+  my $rest= $input;
+  chomp($rest);
+  # now we need to check for a terminator, if we're not inquotes
+  while ($rest =~ /\S/ ) {
+    debugmsg(4, "Main loop in 'parse_input' rest=[$rest]".
+      " incomment=[$incomment] inquotes=[$inquotes] inplsqlblock=[$inplsqlblock]".
+      " increate=[$increate]");
+    my $pattern= $ptnMain;
+    if($inquotes) {
+        if    ($quote eq '\'') { $pattern= $ptnQuoteS; }
+        elsif ($quote eq '"')  { $pattern= $ptnQuoteD; }
+    } elsif ($incomment) {
+        if    ($incomment==1)  { $pattern= $ptnCmTerm; }
+        elsif ($incomment==2)  { $pattern= $ptnCmLine; }
+    }
+#   debugmsg(4, "Before matching pattern=[$pattern]");
+
+    $rest =~ m/$pattern/i;
+
+    # PREMATCH, MATCH, POSTMATCH
+    my ($pre, $match, $post) = ('', '', '');
+    $pre=   $` if (defined($`));
+    $match= $1 if (defined($1));
+    $post=  $' if (defined($'));
+    debugmsg(1, "parse: pre=[$pre] match=[$match] post=[$post] incomment=[$incomment] inquotes=[$inquotes]");
+
+    if ($incomment) {
+      if ($incomment==1) {  # multiline comment
+        if ($match eq '*/') {
+          $incomment= 0;
+          $qbuffer .= $pre.$match;
+          $rest= $post;
+        } else {
+          $qbuffer .= $rest;
+          $rest= '';
+        }
+      } else {              # singleline comment (processed)
+        $incomment= 0;
+        $qbuffer .= $pre.$match;
+        $rest= $post;
+      }
+      next;
+    } elsif ($inquotes) {
+      if ($match eq $quote) {
+        $inquotes= 0;
+        $qbuffer .= $pre.$match;
+        $rest= $post;
+      } else {
+        $qbuffer .= $rest;
+        $rest= '';
+      }
+      next;
+    }
+
+    if ($match eq '') {
+      $qbuffer .= $rest;
+      $rest= '';
+      next;
+    } elsif ($match eq '\'' || $match eq '"') {
+      $inquotes= 1;
+      $quote= $match;
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
+    } elsif ($match eq '/*' || $match eq '--') {
+      if ($match eq '/*') { $incomment= 1; }
+      else                { $incomment= 2; }
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
+    }
+
+    if($match =~ /create/ix) {
+      $increate = 1;
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
+    } elsif(!$increate &&
+            $match =~ /function|package|package\s+body|procedure|trigger/ix)
+    {
+      # do nothing if we're not in a create statement
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
+    } elsif(($match =~ /declare|begin/ix) ||
+	    ($increate && $match =~ /function|package|package\s+body|procedure|trigger/ix))
+    {
+      $inplsqlblock = 1;
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
+    } elsif (!$inplsqlblock && $match eq ';') {
+      return execute_query($pre, $match, $post);
+    } else {
+      $qbuffer .= $pre.$match;
+      $rest= $post;
+      next;
     }
   }
 
@@ -2434,17 +2482,21 @@ sub describe {
         }
 
 	# open the redirection file
-	if($op && $op eq '>' || $op eq '>>') {
+	if($op eq '>' || $op eq '>>') {
     	    ($op_text) = glob($op_text);
-    	    debugmsg(3, "Opening file '$op_text' for output redirection using [$op]");
-	    open(FOUT, $op . $op_text) || query_err('redirect',"Cannot open file '$op_text' for writing: $!", '');
+            my $openmode= $op.$lc_ctype_encoding;
+    	    debugmsg(3, "Opening file '$op_text' for output redirection using [$openmode]");
+	    open(FOUT, $openmode, $op_text) || query_err('redirect',"Cannot open file '$op_text' for writing: $!", '');
         } elsif($op eq '|') {
     	    ($op_text) = glob($op_text);
-	    open(FOUT, $op . $op_text) || query_err('pipe',"Cannot open pipe '$op_text': $!", '');
+            my $openmode= $op.$lc_ctype_encoding;
+    	    debugmsg(3, "Opening pipe '$op_text' for output redirection using [$openmode]");
+	    open(FOUT, $openmode, $op_text) || query_err('pipe',"Cannot open pipe '$op_text': $!", '');
 	} else {
-	    open(FOUT, ">&STDOUT");
+	    my $openmode= '>&'.$lc_ctype_encoding;
+	    open(FOUT, $openmode, *STDOUT);
 	}
-        
+
         if($opt_headers) {
           # Print headers
           print FOUT "\n";
@@ -2757,7 +2809,7 @@ sub query {
     # send the query on to the database 
     push(@totalbench, get_bench()) if !$conf{extended_benchmarks};
     push(@querybench, get_bench()) if $conf{extended_benchmarks};
-    debugmsg(3, "preparing", $sqlstr);
+    debugmsg(3, sprintf("preparing [%s] is_utf8=%d", $sqlstr, Encode::is_utf8($sqlstr)));
     my $sth = $dbh->prepare($sqlstr);
     unless($sth) {
       my $err = $DBI::errstr;
@@ -2826,10 +2878,11 @@ sub query {
     debugmsg(1, "rows returned: [" . $sth->rows() . "]");
 
     # open the redirection file
-    if($op && $op eq '>' || $op eq '>>') {
+    if($op eq '>' || $op eq '>>') {
       ($op_text) = glob($op_text);
-      debugmsg(3, "Opening file '$op_text' for output redirection using [$op]");
-      open(FOUT, $op . $op_text) || do{
+      my $openmode= $op.$lc_ctype_encoding;
+      debugmsg(3, "Opening file '$op_text' for output redirection using [$openmode]");
+      open(FOUT, $openmode, $op_text) || do{
         query_err('redirect',"Cannot open file '$op_text' for writing: $!",
                   $sqlstr);
         finish_query($sth);
@@ -2837,13 +2890,16 @@ sub query {
       };
     } elsif($op eq '|') {
       ($op_text) = glob($op_text);
-      open(FOUT, $op . $op_text) || do{
+      my $openmode= $op.$lc_ctype_encoding;
+      debugmsg(3, "Opening pipe '$op_text' for output redirection using [$openmode]");
+      open(FOUT, $openmode, $op_text) || do{
         query_err('pipe',"Cannot open pipe '$op_text': $!", $sqlstr);
         finish_query($sth);
         return();
       }
     } else {
-      open(FOUT, ">&STDOUT");
+      my $openmode= '>&'.$lc_ctype_encoding;
+      open(FOUT, $openmode, *STDOUT);
     }
 
     # Output message is serveroutput is on
@@ -3149,7 +3205,7 @@ sub format_output {
               print FOUT sprintf("%$widths[$i]s", $fields->[$i]);
             } else {
               print FOUT sprintf("%-$widths[$i]s", $fields->[$i]);
-            }
+            } debugmsg (1, sprintf ("%d layers: %s", __LINE__, join(' ', (PerlIO::get_layers(FOUT)))));
           }
         }
         print FOUT "\n";
@@ -3180,7 +3236,7 @@ sub format_output {
           }
         }
         print FOUT "\n";
-    
+
         $rows_selected++;
         debugmsg(2,"num_rows hit on output") if $num_rows && $j >= $num_rows-1;
         last if $num_rows && $j >= $num_rows-1;
@@ -3203,10 +3259,10 @@ sub format_output {
               print FOUT sprintf("%-$widths[$i]s", $data);
             }
             $res->[$i] = undef; # 20240302.LZS
-            # There is some problem within Perl/DBI/Oracle-DBD (I don't know which)
+            # There is some problem within Perl and/or Oracle-DBD
             # which is related to UTF-8 and string-length-caching 'magic'.
-            # Maybe somewhere function 'Perl_sv_setpvn_mg' should be called instead
-            # of 'Perl_sv_setpvn'
+            # Maybe somewhere function 'Perl_sv_setpvn_mg' should be called
+            # instead of 'Perl_sv_setpvn'
             # Or 'Perl_sv_setpvn' should internally call the '_mg' version.
             # Anyway, when every system on the world will have been fixed,
             # this workaround will be removed.
