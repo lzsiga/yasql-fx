@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# This script originally meant to demonstrate a simple problem:
+# This script was originally meant to demonstrate a simple problem:
 # semicolon(;) in comment causes error message.
 # Eventually, I had to refactor the lexical parser
 
@@ -20,7 +20,7 @@ export NLS_LANG=american_america.AL32UTF8
 export NLS_NCHAR=AL32UTF8
 
 "$Perl" $PerlOpt "$YaSql" $YaSqlOpt $(cat ~/secret/scott.dbuid) <<DONE
--- Nothing special;
+-- Nothing special,
 -- just testing semicolon in comment
 -- "quotes and "apostles should be ignored as well
 -- there's no nested comments comments either /*
