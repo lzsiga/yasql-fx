@@ -189,10 +189,9 @@ sub END {
   # save the history buffer
   if($term_type && $term_type eq 'gnu' && $term->history_total_bytes()) {
     debugmsg(1, "Writing history");
-    unless($term->WriteHistory($conf{history_file})) {
-      wrn("Could not write history file to $conf{history_file}.  "
-         ."History not saved");
-    }
+    MyWriteHistory($term,$conf{history_file}) or
+      wrn("Could not write history file to $conf{history_file}."
+         ." History not saved");
   }
 }
 
@@ -463,9 +462,8 @@ sub setup_term {
 
     # read in the ~/.yasql_history file
     if(-e $conf{history_file}) {
-      unless($term->ReadHistory($conf{history_file})) {
-        wrn("Could not read $conf{history_file}.  History not restored");
-      }
+      MyReadHistory($term, $conf{history_file})
+        or  wrn("Could not read $conf{history_file}. History not restored");
     } else {
       print STDERR "Creating $conf{history_file} to store your command line history\n";
       open(HISTORY, ">$conf{history_file}") 
@@ -482,6 +480,7 @@ sub setup_term {
     $attribs->{completer_word_break_characters}
       = $completer_word_break_characters;
     #$attribs->{catch_signals} = 0;
+
   } elsif($term->ReadLine eq 'Term::ReadLine::Perl') {
     # Term::ReadLine::Perl specific setup
     $term_type = 'perl';
@@ -499,6 +498,42 @@ sub setup_term {
       . "YASQL will run\ncrippled. (like possibly not having command history "
       . "or line editing...\n");
   }
+}
+
+# The history file is in utf8; the history in the memory is $LC_CTYPE
+sub MyReadHistory {
+  my ($term, $fname)=@_;
+  if (-e $fname) {
+    if ($lc_ctype_charset ne '' and $lc_ctype_charset !~ /^utf-?8$/i) {
+      open(my $fh, "<:encoding(UTF-8)", $fname) or return undef;
+      while (my $line = <$fh>) {
+        chomp($line);
+        $line= Encode::encode($lc_ctype_charset, $line);
+        $term->add_history($line);
+      }
+      close($fh);
+    } else {
+      $term->ReadHistory($fname) or return undef;
+    }
+  }
+  return 1;
+}
+
+sub MyWriteHistory {
+  my ($term, $fname)=@_;
+  if ($lc_ctype_charset ne '' and $lc_ctype_charset !~ /^utf-?8$/i) {
+    open(my $fh, ">:encoding(UTF-8)", $fname) or return undef;
+    my @history= $term->GetHistory();
+    open(my $fh, ">:encoding(UTF-8)", $fname) or return undef;
+    foreach my $line (@history) {
+      my $tmp= Encode::decode($lc_ctype_charset, $line);
+      print($fh $tmp."\n");
+    }
+    close($fh);
+  } else {
+    $term->WriteHistory($fname) or return undef;
+  }
+  return 1;
 }
 
 sub parse_logon_string {
@@ -1071,11 +1106,12 @@ sub interface {
   # Check if we were interactively called, or do we need to process STDIN
   if(-t STDIN) {
     while(defined($input = $term->readline($prompt))) {
+      my $input_orig= $input; # 'input_orig' goes to the history
       if (!Encode::is_utf8($input) && $lc_ctype_charset ne '') {
         $input= Encode::decode($lc_ctype_charset, $input);
       }
       $sigintcaught = 0;
-      $prompt = process_input($input, $prompt) || get_prompt();
+      $prompt = process_input($input, $prompt, $input_orig) || get_prompt();
       setup_sigs();
     }
   } else {
@@ -1084,7 +1120,7 @@ sub interface {
     debugmsg(3, "\$opt_batch=$opt_batch", @_);
     # Send STDIN to process_input();
     while(<STDIN>) {
-      process_input($_);
+      process_input($_, '', undef);
     }
   }
 
@@ -1093,9 +1129,6 @@ sub interface {
 
 sub process_input {
   my($input, $prompt, $add_to_history) = @_;
-  if (!(defined($add_to_history))) {
-    $add_to_history = 1;
-  }
   debugmsg(3, "process_input called", @_);
 
   my $nprompt;
@@ -1146,13 +1179,11 @@ sub process_input {
     # default
     $nprompt = $prompt if ($nprompt eq ''); # use last prompt if nothing caught (blank line)
   }
-  if(!$opt_batch && $term->ReadLine eq "Term::ReadLine::Gnu" && $input =~ /[^\s]/ &&
-      $input ne $last_history) {
-    if (!$opt_batch && $add_to_history) {
-	$term->AddHistory($input);
-    }
+  if (!$opt_batch && $term->ReadLine eq "Term::ReadLine::Gnu" &&
+      defined($add_to_history) && $add_to_history =~ /[^\s]/ && $add_to_history ne $last_history) {
+    $term->AddHistory($add_to_history);
+    $last_history = $add_to_history;
   }
-  $last_history = $input;
   return($nprompt);
 }
 
@@ -1717,7 +1748,7 @@ sub edit {
       last if $sigintcaught;
       # now send it in to process_input
       # and don't add lines of the script to command history
-      $prompt = process_input($line, '', 0);
+      $prompt = process_input($line, '', undef);
     }
   }
 
@@ -1775,7 +1806,7 @@ sub run_script {
       
       # now send it in to process_input 
       # and don't add lines of the script to command history
-      $prompt = process_input($_, '', 0);
+      $prompt = process_input($_, '', undef);
     }
     close(SCRIPT);
   }

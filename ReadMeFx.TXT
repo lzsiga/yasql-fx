@@ -1,6 +1,8 @@
 2024.03.xx. Lorinczy Zsigmond
   * Refactoring encoding (cf 'Wide character' problems)
   * Refactoring lexical parsing (cf 'semicolon in comment' problem)
+  * using AL32UTF8 as charset and ncharset; using UTF-8 in history-file
+  * using $LC_CTYPE in history (in memory)
 
 2024.03.02. Lorinczy Zsigmond
   * Forked from https://sourceforge.net/projects/yasql/ version 1.83
