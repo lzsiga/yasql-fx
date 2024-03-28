@@ -3620,7 +3620,7 @@ sub quit {
 
   setup_sigs();
 
-  print "$msg" if $msg && $msg ne "";
+  print $msg if $msg && $msg ne "";
   $quitting = 1;
 
   if($force_quit) {
