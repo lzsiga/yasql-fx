@@ -1,3 +1,8 @@
+2024.05.02. Lorinczy Zsigmond
+  * command 'edit' now uses LC_CTYPE when writing/reading the temporary
+    file
+  * Version number 1.83-2
+
 2024.03.xx. Lorinczy Zsigmond
   * Refactoring encoding (cf 'Wide character' problems)
   * Refactoring lexical parsing (cf 'semicolon in comment' problem)
