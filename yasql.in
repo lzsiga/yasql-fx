@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-1 2024/03/03 07:00:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-2 2024/05/02 17:20:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -60,6 +60,8 @@ use vars qw(
   @sqlpath %set $opt_batch $opt_notbatch $opt_headers
   $lc_ctype_charset $lc_ctype_encoding
 );
+
+$opt_debug= 0;
 
 select((select(STDOUT), $| = 1)[0]); #unbuffer STDOUT
 
@@ -117,7 +119,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-1 2024/03/03 07:00:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-2 2024/05/02 17:20:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -203,10 +205,12 @@ sub END {
 sub init {
   # call GetOptions to parse the command line
   my $opt_help;
+  my $tmp_debug;
+
   Getopt::Long::Configure( qw(permute) );
   $Getopt::Long::ignorecase = 0;
   usage(1) unless GetOptions(
-        "debug|d:i"         => \$opt_debug,
+        "debug|d:i"         => \$tmp_debug,
         "host|H=s"          => \$opt_host,
         "port|p=s"          => \$opt_port,
         "sid|s=s"           => \$opt_sid,
@@ -220,7 +224,10 @@ sub init {
 
   # set opt_debug to 1 if it's defined, which means the user just put -d or
   # --debug without an integer argument
-  $opt_debug = 1 if !$opt_debug && defined $opt_debug;
+  if (defined($tmp_debug)) {
+    if ($tmp_debug) { $opt_debug= $tmp_debug; }
+    else            { $opt_debug= 1; }
+  }
 
   $opt_batch = 0 if $opt_notbatch;
   
@@ -239,7 +246,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-1 2024/03/03 07:00:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-2 2024/05/02 17:20:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -340,20 +347,22 @@ sub init {
   #print "Using SID $opt_sid\n" if $opt_sid;
   $ENV{ORACLE_SID} = $opt_sid if $opt_sid;
 
-  # output info about the options given  
-  print STDERR "Debugging is on\n" if $opt_debug;
+  # output info about the options given
+  if ($opt_debug>=1) {
+    print STDERR "Debugging is on (level=$opt_debug)\n";
+  }
   DBI->trace(1) if $opt_debug > 3;
 
   # Extending on from Oracle's conventions, try and obtain an early indication
   # of ora_session_mode from AS SYSOPER, AS SYSDBA options.  Be flexible :-)
   my $ora_session_mode = 0;
   my $osmp = '';
-  if (lc($ARGV[-2]) eq 'as') {
+  if ($#ARGV>=1 and lc($ARGV[-2]) eq 'as') {
     $ora_session_mode = 2 if lc($ARGV[-1]) eq 'sysdba';
     $ora_session_mode = 4 if lc($ARGV[-1]) eq 'sysoper';
     pop @ARGV;
     pop @ARGV;
-  } elsif (lc($ARGV[1]) eq 'as') {
+  } elsif ($#ARGV>=1 and lc($ARGV[1]) eq 'as') {
     $ora_session_mode = 2 if lc($ARGV[2]) eq 'sysdba';
     $ora_session_mode = 4 if lc($ARGV[2]) eq 'sysoper';
     @ARGV = ($ARGV[0], @ARGV[3..$#ARGV]);
@@ -522,7 +531,6 @@ sub MyReadHistory {
 sub MyWriteHistory {
   my ($term, $fname)=@_;
   if ($lc_ctype_charset ne '' and $lc_ctype_charset !~ /^utf-?8$/i) {
-    open(my $fh, ">:encoding(UTF-8)", $fname) or return undef;
     my @history= $term->GetHistory();
     open(my $fh, ">:encoding(UTF-8)", $fname) or return undef;
     foreach my $line (@history) {
@@ -1693,7 +1701,7 @@ sub edit {
     # don't care if it exists, since there's no way another process could
     # write to the same file at the same time since we use the PID in the
     # filename.
-    my $ret = open(TMPFILE, ">$filename");
+    my $ret = open(TMPFILE, '>'.$lc_ctype_encoding, $filename);
     if(!$ret) { #if file was NOT opened successfully
       wrn("Could not write to $filename: $!");
     } else {
@@ -1719,7 +1727,7 @@ sub edit {
     wrn("Editor exited with $ret: $!");
   } else {
     # read in the tmp file and apply it's contents to the buffer
-    my $ret = open(TMPFILE, "$filename");
+    my $ret = open(TMPFILE, '<'.$lc_ctype_encoding, $filename);
     if(!$ret) { # if file was NOT opened successfully
       wrn("Could not read $filename: $!");
     } else {
@@ -2993,7 +3001,7 @@ sub wildcard_expand {
   my $newsql = $sql;
   my $fromstuff;
   my $wheregrouporder = $sql;
-  $wheregrouporder =~ s/.*(where|order|group).*/\1/;
+  $wheregrouporder =~ s/.*(where|order|group).*/$1/;
   if ($wheregrouporder eq $sql) {
     $wheregrouporder = "";
   }
@@ -3007,7 +3015,7 @@ sub wildcard_expand {
     my %column_prefix;
     foreach my $table (@tlist) {
       $table =~ s/^ *//;
-      $table =~ s/([^ ]+)\s+(.*)/\1/;
+      $table =~ s/([^ ]+)\s+(.*)/$1/;
       $column_prefix{$table} = $2 ? $2 : $table;
       $tablelist .= ($tablelist ? "," : "") . $table;
     }
@@ -3772,7 +3780,7 @@ Return limit:
   Examples:
     The following will run the query, then run it again with different settings:
       user\@ORCL> select * from table;10
-      user\@ORCL> \G50
+      user\@ORCL> \\G50
   
 Redirection:
   You can add a shell like redirection operator after a query to pipe the output
@@ -3785,7 +3793,7 @@ Redirection:
 
     Examples:
       user\@ORCL> select * from table; > table.dump
-      user\@ORCL> select * from table\S > table.csv
+      user\@ORCL> select * from table\\S > table.csv
 
   Input:
     You can use '<' to grab data from a CSV file.  The file must be formatted
@@ -4371,6 +4379,14 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-2 2024/05/02 17:20:00 lzs
+2024.05.02. Lorinczy Zsigmond
+Refactored encoding (cf 'Wide character' problems)
+Refactoring lexical parsing (cf 'semicolon in comment' problem)
+using AL32UTF8 as charset and ncharset; using UTF-8 in history-file
+using $LC_CTYPE in history (in memory); UTF-8 in file
+using $LC_CTYPE in command 'edit'
+
 Revision 1.83-1 2024/03/03 07:00:00 lzs
 Change 'do query_err' to 'query_err' in yasql.in (two occurances)
 Workaround for some utf8-string-length-caching-magic problem
