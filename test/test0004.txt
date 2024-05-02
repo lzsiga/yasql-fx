@@ -1,0 +1,9 @@
+Expected output (stdout) of test0004.sh
+
+It was not long
+Multiline
+   literal
+
+It was not long
+Multiline
+   literal
