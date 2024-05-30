@@ -1,3 +1,9 @@
+2024.05.30. Lorinczy Zsigmond
+  * fix in parsing: special statement-end markers work again (cf test/
+    test009)
+  * fix in the final print: don't do in batch mode
+  * Version number 1.83-0002
+
 2024.05.02. Lorinczy Zsigmond
   * command 'edit' now uses LC_CTYPE when writing/reading the temporary
     file
