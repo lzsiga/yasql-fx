@@ -8,8 +8,8 @@ more complex sample:
   for i in ./test????.sh; do
       d=$(dirname "$i")
       c=$(basename "$i" .sh)
-      YaSql=../yasql.in "$i" &>"$c".out.old
-      YaSql=/usr/local/bin/yasql.orig "$i" &>"$c".out.new
+      YaSql=../yasql.in "$i" &>"$c".out.new
+      YaSql=/usr/local/bin/yasql.orig "$i" &>"$c".out.old
       if cmp "$c".out.old "$c".out.new 2>/dev/null; then
           echo "$i gave the same results"
       else

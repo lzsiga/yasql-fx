@@ -1,6 +1,10 @@
+2024.06.01. Lorinczy Zsigmond
+  * describe_fast is plain wrong (cf test/test0010), I'm removing it
+  * Version number 1.83-0003
+
 2024.05.30. Lorinczy Zsigmond
   * fix in parsing: special statement-end markers work again (cf test/
-    test009)
+    test0009)
   * fix in the final print: don't do in batch mode
   * Version number 1.83-0002
 
