@@ -1,3 +1,8 @@
+2024.06.14. Lorinczy Zsigmond
+  * improvments in describe
+  * header-printing became a subrutin
+  * Version number 1.83-0004
+
 2024.06.01. Lorinczy Zsigmond
   * describe_fast is plain wrong (cf test/test0010), I'm removing it
   * Version number 1.83-0003

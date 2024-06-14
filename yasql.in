@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0003 2024/06/01 21:30:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-0004 2024/06/14 21:44:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -119,7 +119,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0003 2024/06/01 21:30:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0004 2024/06/14 21:44:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -246,7 +246,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0003 2024/06/01 21:30:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0004 2024/06/14 21:44:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -287,13 +287,15 @@ sub init {
     server_output           => 2000,
   );
 
+  $opt_headers= 1;
+
   my $config_file;
   if(-e "$ENV{HOME}/.yasqlrc") {
     $config_file = "$ENV{HOME}/.yasqlrc";
   } elsif(-e $sysconf) {
     $config_file = $sysconf;
   }
-  
+
   if($config_file) {
     debugmsg(2, "Reading config: $config_file");
     open(CONFIG, "$config_file");
@@ -2440,16 +2442,11 @@ sub describe_table {
                  'N','NOT NULL'
                  ) "Null?",
                decode(data_type,
-                 'VARCHAR2','VARCHAR2(' || TO_CHAR(data_length) || ')',
-                 'NVARCHAR2','NVARCHAR2(' || TO_CHAR(data_length) || ')',
-                 'CHAR','CHAR(' || TO_CHAR(data_length) || ')',
-                 'NCHAR','NCHAR(' || TO_CHAR(data_length) || ')',
-                 'NUMBER',
-                   decode(data_precision,
-                     NULL, 'NUMBER',
-                     'NUMBER(' || TO_CHAR(data_precision)
-                                || ',' || TO_CHAR(data_scale) || ')'
-                   ),
+                 'VARCHAR2','VARCHAR2(' || char_length || cu_decoded || ')',
+                 'NVARCHAR2','NVARCHAR2(' || char_length || ')',
+                 'CHAR','CHAR(' || char_length || cu_decoded || ')',
+                 'NCHAR','NCHAR(' || char_length || ')',
+                 'NUMBER', 'NUMBER(' || ps_decoded || ')',
                  'FLOAT',
                    decode(data_precision,
                      NULL, 'FLOAT', 'FLOAT(' || TO_CHAR(data_precision) || ')'
@@ -2467,7 +2464,12 @@ sub describe_table {
                  data_type || ' ???'
                ) "Type",
                data_default "Default"
-          from all_tab_columns
+         from (
+            select t.*,
+              decode(t.char_used,'B','BYTE','C','CHAR',NULL) cu_decoded,
+              decode(t.data_precision,NULL,'38',
+                t.data_precision || decode(t.data_scale, 0,'', NULL,'', ','||t.data_scale)) ps_decoded
+            from all_tab_columns t)
          where table_name = ?
            and owner = ?
          order by column_id
@@ -2838,7 +2840,7 @@ sub query {
                   $sqlstr);
         finish_query($sth);
         return();
-      };
+      }
     } elsif($op eq '|') {
       ($op_text) = glob($op_text);
       my $openmode= $op.$lc_ctype_encoding;
@@ -2857,7 +2859,9 @@ sub query {
     if($set{serveroutput}) {
       debugmsg(3, "Calling dmbs_output_get");
       my @output = $dbh->func( 'dbms_output_get' );
-      print join("\n", @output) . "\n";
+      if (scalar(@output)>0) {
+        print join("\n", @output) . "\n";
+      }
     }
 
     # Determine type and output accordingly
@@ -3037,6 +3041,27 @@ sub output_benchmark {
   }
 }
 
+sub format_output_header {
+  my($fh, $op, $fields, $types, $widths) = @_;
+##      print $fh "\r[K" if $op eq '<';
+##      print $fh "\n";
+        for( my $i = 0; $i < @$fields; $i++ ) {
+          print $fh " " if $i > 0;
+          if($types->[$i] == 3 || $types->[$i] == 8) { # SQLT_INT, SQLT_LNG
+            print $fh sprintf("%*s", $widths->[$i], $fields->[$i]);
+          } else {
+            print $fh sprintf("%-*s", $widths->[$i], $fields->[$i]);
+          }
+        }
+        print $fh "\n";
+
+        for( my $i = 0; $i < @$fields; $i++ ) {
+          print $fh " " if $i > 0;
+          print $fh '-' x $widths->[$i];
+        }
+        print $fh "\n";
+}
+
 sub format_output {
   my($sth, $format, $num_rows, $sqlstr, $op, $op_text) = @_;
   debugmsg(3, "format_output called", @_);
@@ -3105,12 +3130,14 @@ sub format_output {
 
     # Extend the column widths if the column name is longer than any of the
     # data, so that it doesn't truncate the column name
-    for( my $i = 0; $i < @$fields; $i++ ) {
-      if(length($fields->[$i]) > $widths[$i]) {
-        debugmsg(3, "Extending $fields->[$i] for name width");
-        $widths[$i] = length($fields->[$i]);
+    if ($opt_headers) {
+      for( my $i = 0; $i < @$fields; $i++ ) {
+        if(length($fields->[$i]) > $widths[$i]) {
+          debugmsg(3, "Extending $fields->[$i] for name width");
+          $widths[$i] = length($fields->[$i]);
+        }
+        return(0) if $sigintcaught; #pseudo sig handle
       }
-      return(0) if $sigintcaught; #pseudo sig handle
     }
 
     return(0) if $sigintcaught; #pseudo sig handle
@@ -3141,33 +3168,9 @@ sub format_output {
     # now do the actual outputting, starting with the header
     my $rows_selected = 0;
     if(@$res) {
-      if(!$opt_batch) {
-        print FOUT "\r[K" if $op eq '<';
-        print FOUT "\n";
-        for( my $i = 0; $i < @$fields; $i++ ) {
-          if($opt_batch) {
-            print FOUT "\t" if $i > 0;
-            print FOUT sprintf("%s", $fields->[$i]);
-          }
-          else
-          {
-            print FOUT " " if $i > 0;
-            if($types->[$i] == 3 || $types->[$i] == 8) { # SQLT_INT, SQLT_LNG
-              print FOUT sprintf("%$widths[$i]s", $fields->[$i]);
-            } else {
-              print FOUT sprintf("%-$widths[$i]s", $fields->[$i]);
-            } debugmsg (1, sprintf ("%d layers: %s", __LINE__, join(' ', (PerlIO::get_layers(FOUT)))));
-          }
-        }
-        print FOUT "\n";
-        
-        for( my $i = 0; $i < @$fields; $i++ ) {
-          print FOUT " " if $i > 0;
-          print FOUT '-' x $widths[$i];
-        }
-        print FOUT "\n";
+      if($opt_headers) {
+        format_output_header(*FOUT, $op, $fields, $types, \@widths);
       }
-    
       return(0) if $sigintcaught; #pseudo sig handle
 
       # now print the actual data rows
@@ -4291,6 +4294,10 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-0004 2024/06/01 21:44:00 lzs
+Improvments in describe
+Header-printing became a subrutin
+
 Revision 1.83-0003 2024/06/01 21:30:00 lzs
 Reorganized describe, removed describe_fast
 
