@@ -29,3 +29,4 @@ list of tests:
   test0008.sh - demonstrates iso-8859-2 compatibility
   test0009.sh - demonstrates special ending sequences
   test0010.sh - testing 'describe table' (cf test0010.txt)
+  test0011.sh - testing '\i' terminator (uses table 'emp')

@@ -1,0 +1,37 @@
+Result before fix:
+
+don't know how to handle SQL type DECIMAL at /usr/local/bin/yasql.orig line 3348, <STDIN> line 1.
+
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7369), 'SMITH', 'CLERK', (unknown type DECIMAL: 7902), '1980-12-17 00:00:00', (unknown type DECIMAL: 800), null, (unknown type DECIMAL: 20));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7499), 'ALLEN', 'SALESMAN', (unknown type DECIMAL: 7698), '1981-02-20 00:00:00', (unknown type DECIMAL: 1600), (unknown type DECIMAL: 300), (unknown type DECIMAL: 30));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7521), 'WARD', 'SALESMAN', (unknown type DECIMAL: 7698), '1981-02-22 00:00:00', (unknown type DECIMAL: 1250), (unknown type DECIMAL: 500), (unknown type DECIMAL: 30));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7566), 'JONES', 'MANAGER', (unknown type DECIMAL: 7839), '1981-04-02 00:00:00', (unknown type DECIMAL: 2975), null, (unknown type DECIMAL: 20));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7654), 'MARTIN', 'SALESMAN', (unknown type DECIMAL: 7698), '1981-09-28 00:00:00', (unknown type DECIMAL: 1250), (unknown type DECIMAL: 1435), (unknown type DECIMAL: 30));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7698), 'BLAKE', 'MANAGER', (unknown type DECIMAL: 7839), '1981-05-01 00:00:00', (unknown type DECIMAL: 2850), null, (unknown type DECIMAL: 30));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7782), 'CLARK', 'MANAGER', (unknown type DECIMAL: 7839), '1981-06-09 00:00:00', (unknown type DECIMAL: 2450), null, (unknown type DECIMAL: 10));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7788), 'SCOTT', 'ANALYST', (unknown type DECIMAL: 7566), '1982-12-09 00:00:00', (unknown type DECIMAL: 3000), null, (unknown type DECIMAL: 20));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7839), 'KING', 'PRESIDENT', null, '1981-11-17 00:00:00', (unknown type DECIMAL: 5000), null, (unknown type DECIMAL: 10));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7844), 'TURNER', 'SALESMAN', (unknown type DECIMAL: 7698), '1981-09-08 00:00:00', (unknown type DECIMAL: 1500), (unknown type DECIMAL: 35), (unknown type DECIMAL: 30));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7876), 'ADAMS', 'CLERK', (unknown type DECIMAL: 7788), '1983-01-12 00:00:00', (unknown type DECIMAL: 1100), null, (unknown type DECIMAL: 20));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7900), 'JAMES', 'CLERK', (unknown type DECIMAL: 7698), '1981-12-03 00:00:00', (unknown type DECIMAL: 950), null, (unknown type DECIMAL: 30));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7902), 'FORD', 'ANALYST', (unknown type DECIMAL: 7566), '1981-12-03 00:00:00', (unknown type DECIMAL: 3000), null, (unknown type DECIMAL: 20));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7934), 'MILLER', 'CLERK', (unknown type DECIMAL: 7782), '1982-01-23 00:00:00', (unknown type DECIMAL: 1300), null, (unknown type DECIMAL: 10));
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values ((unknown type DECIMAL: 7944), 'JAMES', 'MAN FRIDA', (unknown type DECIMAL: 7839), '1982-05-20 12:34:56', (unknown type DECIMAL: 1500), null, (unknown type DECIMAL: 20));
+
+Result after fix:
+
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7369, 'SMITH', 'CLERK', 7902, '1980-12-17 00:00:00', 800, null, 20);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7499, 'ALLEN', 'SALESMAN', 7698, '1981-02-20 00:00:00', 1600, 300, 30);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7521, 'WARD', 'SALESMAN', 7698, '1981-02-22 00:00:00', 1250, 500, 30);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7566, 'JONES', 'MANAGER', 7839, '1981-04-02 00:00:00', 2975, null, 20);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7654, 'MARTIN', 'SALESMAN', 7698, '1981-09-28 00:00:00', 1250, 1435, 30);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7698, 'BLAKE', 'MANAGER', 7839, '1981-05-01 00:00:00', 2850, null, 30);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7782, 'CLARK', 'MANAGER', 7839, '1981-06-09 00:00:00', 2450, null, 10);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7788, 'SCOTT', 'ANALYST', 7566, '1982-12-09 00:00:00', 3000, null, 20);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7839, 'KING', 'PRESIDENT', null, '1981-11-17 00:00:00', 5000, null, 10);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7844, 'TURNER', 'SALESMAN', 7698, '1981-09-08 00:00:00', 1500, 35, 30);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7876, 'ADAMS', 'CLERK', 7788, '1983-01-12 00:00:00', 1100, null, 20);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7900, 'JAMES', 'CLERK', 7698, '1981-12-03 00:00:00', 950, null, 30);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7902, 'FORD', 'ANALYST', 7566, '1981-12-03 00:00:00', 3000, null, 20);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7934, 'MILLER', 'CLERK', 7782, '1982-01-23 00:00:00', 1300, null, 10);
+insert into TABLE (empno, ename, job, mgr, hiredate, sal, comm, deptno) values (7944, 'JAMES', 'MAN FRIDA', 7839, '1982-05-20 12:34:56', 1500, null, 20);

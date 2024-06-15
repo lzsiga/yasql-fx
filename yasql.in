@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0004 2024/06/14 21:44:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-0005 2024/06/15 22:26:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -119,7 +119,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0004 2024/06/14 21:44:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0005 2024/06/15 22:26:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -246,7 +246,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0004 2024/06/14 21:44:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0005 2024/06/15 22:26:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -821,8 +821,13 @@ sub db_connect {
 
   my($dbhandle, $dberr, $dberrstr, $this_prompt_host, $this_prompt_user);
 
-  debugmsg(1,"ora_session_mode: [$ora_session_mode] username: [$username] password: [$password] connect_string: [$connect_string]");
-  
+  debugmsg(1, sprintf("ora_session_mode: [%s] username: [%s] password: [%s] connect_string: [%s]",
+           defined($ora_session_mode)? $ora_session_mode: '',
+           defined($username)?         $username: '',
+           defined($password)?         $password: '',
+           defined($connect_string)?   $connect_string: ''
+           ));
+
   # The first thing we're going to check is that the Oracle DBD is available
   # since it's a sorta required element =)
   my @drivers = DBI->available_drivers();
@@ -847,7 +852,7 @@ sub db_connect {
     ora_ncharset => 'AL32UTF8'
   };
 
-  if($connect_string eq 'external') {
+  if(defined($connect_string) && $connect_string eq 'external') {
     # the user wants to connect with external authentication
 
     check_oracle_home();
@@ -3062,6 +3067,58 @@ sub format_output_header {
         print $fh "\n";
 }
 
+sub format_output_sql {
+  my($fh, $sth, $num_rows, $isselect) = @_;
+
+    # Produce SQL insert statements.
+    ## print "\r" if $op eq '<';
+    ## print FOUT "\n";
+
+    my $cols = lc join(', ', @{$sth->{NAME}});
+    my @types = map { scalar $dbh->type_info($_)->{TYPE_NAME} } @{ $sth->{TYPE} };
+    my %warned_unknown_type;
+
+    my $count = 0;
+    while(my $res = $sth->fetch()) {
+	$count++;
+	die if @$res != @types;
+	print $fh "insert into TABLE ($cols) values (";
+	foreach (0 .. $#$res) {
+	    my $t = $types[$_];
+	    my $v = $res->[$_];
+	    if (not defined $v) {
+		print $fh 'null';
+	    } else {
+		if ($t eq 'DOUBLE' or $t eq 'NUMBER' or $t eq 'DECIMAL') {
+		    die "bad number: $v" if $v !~ /\d/;
+		    print $fh $v;
+		} elsif ($t eq 'VARCHAR2' or $t eq 'CHAR' or $t eq 'CLOB') {
+		    $v =~ s/['']/''/g;
+		    print $fh "'$v'";
+		} elsif ($t eq 'DATE') {
+		    print $fh "'$v'";
+		} else {
+		    warn "don't know how to handle SQL type $t"
+		    unless $warned_unknown_type{$t}++;
+		    print $fh "(unknown type $t: $v)";
+		}
+	    }
+	    print $fh ', ' unless $_ eq $#$res;
+	}
+	print $fh ");\n";
+	last if $num_rows && $count >= $num_rows;
+	return(0) if $sigintcaught; #pseudo sig handle
+    }
+    return(0) if $sigintcaught; #pseudo sig handle
+
+    # If we didn't get any rows back, then the query was probably an insert or
+    # update, so we call format_affected
+    if($count <= 0 && !$isselect) {
+	return($sth->rows(), 'affected');
+    }
+    return($count, 'selected');
+}
+
 sub format_output {
   my($sth, $format, $num_rows, $sqlstr, $op, $op_text) = @_;
   debugmsg(3, "format_output called", @_);
@@ -3367,57 +3424,11 @@ sub format_output {
       return($count, 'selected');
     }
   } elsif($format eq 'sql') {
-    # Produce SQL insert statements.
-    print "\r" if $op eq '<';
-    print FOUT "\n";
-
-    my $cols = lc join(', ', @{$sth->{NAME}});
-    my @types = map { scalar $dbh->type_info($_)->{TYPE_NAME} } @{ $sth->{TYPE} };
-    my %warned_unknown_type;
-
-    my $count = 0;
-    while(my $res = $sth->fetch()) {
-	$count++;
-	die if @$res != @types;
-	print FOUT "insert into TABLE ($cols) values (";
-	foreach (0 .. $#$res) {
-	    my $t = $types[$_];
-	    my $v = $res->[$_];
-	    if (not defined $v) {
-		print FOUT 'null';
-	    } else {
-		if ($t eq 'DOUBLE' or $t eq 'NUMBER') {
-		    die "bad number: $v" if $v !~ /\d/;
-		    print FOUT $v;
-		} elsif ($t eq 'VARCHAR2' or $t eq 'CHAR' or $t eq 'CLOB') {
-		    $v =~ s/['']/''/g;
-		    print FOUT "'$v'";
-		} elsif ($t eq 'DATE') {
-		    print FOUT "'$v'";
-		} else {
-		    warn "don't know how to handle SQL type $t"
-		    unless $warned_unknown_type{$t}++;
-		    print FOUT "(unknown type $t: $v)";
-		}
-	    }
-	    print FOUT ', ' unless $_ eq $#$res;
-	}
-	print FOUT ");\n";
-	last if $num_rows && $count >= $num_rows;
-	return(0) if $sigintcaught; #pseudo sig handle
-    }
-    return(0) if $sigintcaught; #pseudo sig handle
-
-    # If we didn't get any rows back, then the query was probably an insert or
-    # update, so we call format_affected
-    if($count <= 0 && !$isselect) {
-	return($sth->rows(), 'affected');
-    }
-    return($count, 'selected');
+    return format_output_sql(*FOUT, $sth, $num_rows, $isselect);
   } else {
     die("Invalid format: $format");
   }
-}    
+}
 
 sub format_affected {
   my($rows_affected, $success_code) = @_;
@@ -4294,7 +4305,10 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
-Revision 1.83-0004 2024/06/01 21:44:00 lzs
+Revision 1.83-0005 2024/06/15 22:23:00 lzs
+Fix within \i format
+
+Revision 1.83-0004 2024/06/14 21:44:00 lzs
 Improvments in describe
 Header-printing became a subrutin
 

@@ -1,3 +1,7 @@
+2024.06.15. Lorinczy Zsigmond
+  * fix within \i format
+  * Version number 1.83-0005
+
 2024.06.14. Lorinczy Zsigmond
   * improvments in describe
   * header-printing became a subrutin
