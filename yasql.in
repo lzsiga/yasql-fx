@@ -3089,7 +3089,8 @@ sub format_output_sql {
 	    if (not defined $v) {
 		print $fh 'null';
 	    } else {
-		if ($t eq 'DOUBLE' or $t eq 'NUMBER' or $t eq 'DECIMAL') {
+		if ($t eq 'DOUBLE' or $t eq 'NUMBER' or $t eq 'DECIMAL' or
+		    $t eq 'DOUBLE PRECISION') {
 		    die "bad number: $v" if $v !~ /\d/;
 		    print $fh $v;
 		} elsif ($t eq 'VARCHAR2' or $t eq 'CHAR' or $t eq 'CLOB') {
