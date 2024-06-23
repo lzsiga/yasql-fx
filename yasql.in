@@ -3075,8 +3075,21 @@ sub format_output_sql {
     ## print FOUT "\n";
 
     my $cols = lc join(', ', @{$sth->{NAME}});
-    my @types = map { scalar $dbh->type_info($_)->{TYPE_NAME} } @{ $sth->{TYPE} };
-    my %warned_unknown_type;
+    my($i, $n)= (0, scalar @{$sth->{NAME}});
+    my @types;
+    for (my($i, $n)= (0, scalar @{$sth->{NAME}}); $i<$n; ++$i) {
+        my $cname= $sth->{NAME}->[$i];
+        my $ctype= $sth->{TYPE}->[$i];
+        my $ctname= '(No name for this type)';
+        if ($ctype>=0) {
+            my $ctinfo= $dbh->type_info($ctype);
+            if (defined($ctinfo->{TYPE_NAME})) { $ctname= $ctinfo->{TYPE_NAME}; }
+            else                               { $ctname= 'Type#'.$ctype; }
+        } else                                 { $ctname= 'Type#'.$ctype; }
+        push(@types, $ctname);
+        debugmsg(5, sprintf("line %d: field#%d %s type=%d %s", __LINE__, $i, $cname, $ctype, $ctname));
+    }
+    my %warned_unknown_field;
 
     my $count = 0;
     while(my $res = $sth->fetch()) {
@@ -3099,9 +3112,10 @@ sub format_output_sql {
 		} elsif ($t eq 'DATE') {
 		    print $fh "'$v'";
 		} else {
-		    warn "don't know how to handle SQL type $t"
-		    unless $warned_unknown_type{$t}++;
-		    print $fh "(unknown type $t: $v)";
+                    my $fldname= $sth->{NAME}->[$_];
+		    warn sprintf("don't know how to handle field '%s'", $fldname)
+		    unless $warned_unknown_field{$fldname}++;
+		    print $fh "'$v'";
 		}
 	    }
 	    print $fh ', ' unless $_ eq $#$res;
