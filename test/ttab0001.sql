@@ -23,17 +23,26 @@ CREATE TABLE yasql_ttab_0001 (
     f1     FLOAT,
 
     f2     DOUBLE PRECISION,
-    f3     REAL
+    f3     REAL,
+    dt     DATE,
+    ts     TIMESTAMP(5),
+    ts_tz  TIMESTAMP(6) WITH TIME ZONE,
+    ts_ltz TIMESTAMP(7) WITH LOCAL TIME ZONE
 );
 
 INSERT INTO yasql_ttab_0001
  (c12c,  c12b,  nc12,  vc12c, vc12b,
   nvc12, raw12, int1,  int2,  int3,
   num12, num20, num84, num93, f1,
-  f2,    f3)
+  f2,    f3,    dt,    ts,    ts_tz,
+  ts_ltz)
 VALUES
  ('char12c',     'char12',     N'nchar12',  'varchar12c', 'varchar12b',
   N'nvarchar12', '7261773132', 1230000001,  1230000002,   1230000003,
   1230000004,    1230000005,   1230.0006 ,  123000.007,  3.1415926535,
-  2.7182818284,  1.6180339887);
-COMMIT;
+  2.7182818284,  1.6180339887,
+  to_date        ('20240630.093400',      'YYYYMMDD.HH24MISS'),
+  to_timestamp   ('20240630.093400.12345','YYYYMMDD.HH24MISS.FF'),
+  to_timestamp_tz('20240630.093401.123456 Europe/Budapest CEST', 'YYYYMMDD.HH24MISS.FF TZR TZD'),
+  to_timestamp_tz('20240630.093401.1234567 Europe/Budapest CEST','YYYYMMDD.HH24MISS.FF TZR TZD')
+ );
