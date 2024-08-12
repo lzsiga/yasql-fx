@@ -1,3 +1,7 @@
+2024.08.12. Lorinczy Zsigmond
+  * Use variables NLS_DATE_FORMAT, NLS_TIMESTAMP_FORMAT, NLS_TIMESTAMP_TZ_FORMAT
+  * Version number 1.83-0006
+
 2024.06.15. Lorinczy Zsigmond
   * fix within \i format
   * Version number 1.83-0005
