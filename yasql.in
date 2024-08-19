@@ -2502,7 +2502,7 @@ sub describe_table {
 
 sub describe {
   my($input, $format, $nosynonym, $num_rows, $op, $op_text) = @_;
-  debugmsg(3, "describe called", @_);
+  debugmsg(3, sprintf("line %d describe called", __LINE__), @_);
   # This describes a table, view, sequence, or synonym  by listing it's 
   # columns and their attributes
 
@@ -2539,7 +2539,7 @@ sub describe {
       $schema = $dbuser;
     }
 
-    debugmsg(1,"schema: [$schema] object: [$object] dblink: [$dblink]");
+    debugmsg(1,sprintf("line %d schema: [$schema] object: [$object] dblink: [$dblink]", __LINE__));
 
     # look in all_constraints for the object first.  This is because oracle
     # stores information about primary keys in the all_objects table as "index"s
@@ -2586,18 +2586,29 @@ sub describe {
     }
 
     $type = $ret[0];
-    debugmsg(1,"type: [$type] ret: [@ret]");
+    debugmsg(1, sprintf("line %d type: [$type] ret: [@ret]", __LINE__));
 
     if($type eq 'SYNONYM') {
       # Find what this is a synonym to, then recursively call this function
       # again to describe whatever it points to
-      my($table_name, $table_owner) = $dbh->selectrow_array(
-        'select table_name, table_owner from all_synonyms '
-        .'where synonym_name = ? and owner = ?',
-        undef, uc($ret[2]), uc($ret[1])
-      );
-      
-      describe("desc $table_owner.$table_name", $format, 1);
+      my $stmt=
+        'select table_name, table_owner, db_link from all_synonyms '
+        .'where synonym_name = ? and owner = ?';
+      my($table_name, $table_owner, $db_link) = $dbh->selectrow_array(
+        $stmt, undef, uc($ret[2]), uc($ret[1]));
+      debugmsg(4,
+        sprintf(
+          "line %d stmt='%s' synonym_name='%s' owner='%s'\n".
+          "table_name='%s' table_owner='%s' db_link='%s'",
+          __LINE__, $stmt, uc($ret[2]), uc($ret[1]),
+          $table_name, $table_owner, $db_link));
+
+      my $desc_next= sprintf ('desc %s%s'.'%s'.'%s%s',
+          $table_owner, ($table_owner? '.': ''),
+          $table_name,
+          ($db_link? '@': ''), $db_link);
+      debugmsg(4, sprintf("line %d desc_next='%s'", __LINE__, $desc_next));
+      describe($desc_next, $format, 1);
     } elsif($type eq 'SEQUENCE') {
       my $sqlstr = q{
         select sequence_name "Name", 
