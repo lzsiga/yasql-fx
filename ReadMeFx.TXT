@@ -1,6 +1,6 @@
-2024.08.19. lzs
+2024.10.23. lzs
   * little fix about describing synonyms that refer to tables via dblink
-    (it still needs work, so no version change yet)
+  * Version number 1.83-0007
 
 2024.08.12. lzs
   * Use variables NLS_DATE_FORMAT, NLS_TIMESTAMP_FORMAT, NLS_TIMESTAMP_TZ_FORMAT

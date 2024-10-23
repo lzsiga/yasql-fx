@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0006 2024/08/12 18:50:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-0007 2024/10/23 21:21:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -119,7 +119,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0006 2024/08/12 18:50:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0007 2024/10/23 21:21:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -246,7 +246,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0006 2024/08/12 18:50:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0007 2024/10/23 21:21:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -2455,10 +2455,55 @@ sub show {
   }
 }
 
-sub describe_table {
-  my($format, $num_rows, $op, $op_text, $table_name, $owner_name) = @_;
+# helper-rutins for 'describe'
+#
+# core   schema dblink result
+# ----   ------ ------ ------
+# tables -      -      select NULL OWNER, list from user_tables        where table_name=?
+# tables -      DBLINK select NULL OWNER, list from user_tables@DBLINK where table_name=?
+# tables SCHEMA -      select list from all_tables         where owner='SCHEMA' and table_name=?
+# tables SCHEMA DBLINK select list from all_tables@DBLINK  where owner='SCHEMA' and table_name=?
 
-      my $sqlstr = q{
+sub describe_tablename {
+  my($core, $schema, $dblink) = @_;
+  my $res;
+
+  if ($schema) { $res = 'all_';  }
+  else         { $res = 'user_'; }
+
+  $res .= $core;
+
+  if ($dblink) {
+    my $prefix= '';
+    if (substr($dblink,0,1) ne '@') { $prefix= '@'; }
+    $res .= $prefix.$dblink;
+  }
+
+  return $res;
+}
+
+sub describe_owner_where {
+  my($schema, $dblink)= @_;
+  my $res;
+
+  if    ($schema) { $res= sprintf("owner='%s' and ", uc($schema)); }
+  else            { $res= ''; }
+  return $res;
+}
+
+sub describe_owner_select {
+  my($schema, $dblink)= @_;
+  my $res;
+
+  if    ($schema) { $res= 'owner'; }
+  else            { $res= 'NULL owner'; }
+  return $res;
+}
+
+sub describe_table {
+  my($format, $num_rows, $op, $op_text, $table_name, $owner_name, $dblink) = @_;
+
+  my $sqlstr = sprintf (q{
         select column_name "Name",
                decode(nullable,
                  'N','NOT NULL'
@@ -2488,21 +2533,58 @@ sub describe_table {
                data_default "Default"
          from (
             select t.*,
-              decode(t.char_used,'B','BYTE','C','CHAR',NULL) cu_decoded,
+              decode(t.char_used,'B',' BYTE','C',' CHAR',NULL) cu_decoded,
               decode(t.data_precision,NULL,'38',
                 t.data_precision || decode(t.data_scale, 0,'', NULL,'', ','||t.data_scale)) ps_decoded
-            from all_tab_columns t)
-         where table_name = ?
-           and owner = ?
-         order by column_id
-      };
-      query($sqlstr, $format, {num_rows => $num_rows, op => $op,
-                               op_text => $op_text}, uc($table_name), uc($owner_name));
+            from %s t)
+         where %s table_name = ?
+         order by column_id},
+      describe_tablename('tab_columns', $owner_name, $dblink),
+      describe_owner_where($owner_name, $dblink)
+      );
+  query($sqlstr, $format, {num_rows => $num_rows, op => $op, op_text => $op_text},
+        uc($table_name));
+}
+
+sub describe_lookup_object_1 {
+  my ($object,$schema,$dblink,$nosynonym) = @_;
+  my $sqlstr = sprintf(
+     "select object_type, %s, object_name, object_id, created".
+     ", last_ddl_time, timestamp, status".
+     " from %s where %sobject_name=?".
+     ($nosynonym ? " and object_type != 'SYNONYM'" : ""),
+     describe_owner_select($schema, $dblink),
+     describe_tablename('objects', $schema, $dblink),
+     describe_owner_where($schema, $dblink));
+  debugmsg(3, sprintf("line %d trying sql '%s'\n?=%s", __LINE__, $sqlstr, uc($object)));
+
+  my @ret = $dbh->selectrow_array($sqlstr, undef, uc($object));
+  debugmsg(3, sprintf("line %d ret=", __LINE__).Dumper(@ret));
+  return @ret;
+}
+
+# rutin for describe: read user_objects / all_objects
+sub describe_lookup_object {
+  my ($object,$schema,$dblink,$nosynonym) = @_;
+  my @ret= describe_lookup_object_1($object, $schema, $dblink, $nosynonym);
+
+  if (not @ret and uc($schema) ne 'PUBLIC') {
+    @ret= describe_lookup_object_1($object, 'PUBLIC', $dblink, $nosynonym);
+  }
+  return @ret;
+}
+
+sub cut_first {
+    my ($str, $sep)= @_;
+
+    my $pos= index($str, $sep);
+    if ($pos==-1) { $pos= length($str); }
+    return substr($str, 0, $pos);
 }
 
 sub describe {
   my($input, $format, $nosynonym, $num_rows, $op, $op_text) = @_;
-  debugmsg(3, sprintf("line %d describe called", __LINE__), @_);
+  debugmsg(3, sprintf("line %d describe called input='%s'", __LINE__, $input), @_);
   # This describes a table, view, sequence, or synonym  by listing it's 
   # columns and their attributes
 
@@ -2514,7 +2596,7 @@ sub describe {
     wrn("Database connection died");
     db_reconnect();
   }
-    
+
   # parse the query to find the table that was requested to be described
   if($input =~ /^\s*desc\w*\s*([a-zA-Z0-9_\$\#\.\@]+)/) {
     my $object = $1;
@@ -2523,20 +2605,20 @@ sub describe {
     my @ret;
 
     my $schema;
-    my $dblink;
+    my $dblink= '';
     if($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#]+)\@([a-zA-Z0-9_\$\#]+)$/) {
       $schema = $1;
       $object = $2;
       $dblink = "\@$3";
     } elsif($object =~ /^([a-zA-Z0-9_\$\#]+)\@([a-zA-Z0-9_\$\#]+)$/) {
-      $schema = $dbuser;
+      $schema = '';
       $object = $1;
       $dblink = "\@$2";
     } elsif($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#]+)$/) {
       $schema = $1;
       $object = $2;
     } else {
-      $schema = $dbuser;
+      $schema = '';
     }
 
     debugmsg(1,sprintf("line %d schema: [$schema] object: [$object] dblink: [$dblink]", __LINE__));
@@ -2547,26 +2629,11 @@ sub describe {
     # there here first
 
     # now look in all_objects
-    my $all_object_cols = 'object_type,owner,object_name,'
-                        . 'object_id,created,last_ddl_time,'
-                        . 'timestamp,status';
-
-    @ret = $dbh->selectrow_array(
-      "select $all_object_cols from all_objects where object_name = ? "
-        ."and owner = ?"
-        .($nosynonym ? " and object_type != 'SYNONYM'" : ""), 
-        undef, uc($object), uc($schema)
-    ) or
-    @ret = $dbh->selectrow_array(
-      "select $all_object_cols from all_objects where object_name = ? "
-        ."and owner = 'PUBLIC'" 
-        .($nosynonym ? " and object_type != 'SYNONYM'" : ""), 
-        undef, uc($object)
-    );
+    @ret= describe_lookup_object($object,$schema,$dblink,$nosynonym);
 
     unless(@ret) {
       @ret = $dbh->selectrow_array(
-        "select constraint_type, constraint_name from all_constraints where "
+        "select constraint_type, constraint_name from all_constraints$dblink where "
           ."constraint_name = ?",
         undef, uc($object)
       );
@@ -2577,55 +2644,64 @@ sub describe {
       # all_constraints table
 
       my @temp_ret = $dbh->selectrow_array(
-        "select constraint_type, constraint_name from all_constraints where "
+        "select constraint_type, constraint_name from all_constraints$dblink where "
           ."constraint_name = ?",
         undef, uc($object)
       );
-      
+
       @ret = @temp_ret if @temp_ret;
     }
 
     $type = $ret[0];
+    my $object_owner = $ret[1];
+    my $object_name  = $ret[2];
     debugmsg(1, sprintf("line %d type: [$type] ret: [@ret]", __LINE__));
 
     if($type eq 'SYNONYM') {
       # Find what this is a synonym to, then recursively call this function
       # again to describe whatever it points to
       my $stmt=
-        'select table_name, table_owner, db_link from all_synonyms '
-        .'where synonym_name = ? and owner = ?';
-      my($table_name, $table_owner, $db_link) = $dbh->selectrow_array(
-        $stmt, undef, uc($ret[2]), uc($ret[1]));
+        sprintf(
+          "select table_name, table_owner, db_link from %s".
+          " where %s synonym_name = ?",
+          describe_tablename('synonyms', $object_name, $dblink),
+          describe_owner_where($object_owner, $dblink));
+
+      my($table_name, $table_owner, $syn_dblink) = $dbh->selectrow_array(
+        $stmt, undef, $object_name);
+      if ($syn_dblink) {
+        $syn_dblink= '@'.cut_first($dblink, '.'); # "mydb_link.domain.name" ==> "mydb_link"
+      }
       debugmsg(4,
         sprintf(
           "line %d stmt='%s' synonym_name='%s' owner='%s'\n".
-          "table_name='%s' table_owner='%s' db_link='%s'",
+          "table_name='%s' table_owner='%s' dblink='%s'",
           __LINE__, $stmt, uc($ret[2]), uc($ret[1]),
-          $table_name, $table_owner, $db_link));
+          $table_name.$dblink, $table_owner, $syn_dblink));
 
       my $desc_next= sprintf ('desc %s%s'.'%s'.'%s%s',
           $table_owner, ($table_owner? '.': ''),
           $table_name,
-          ($db_link? '@': ''), $db_link);
-      debugmsg(4, sprintf("line %d desc_next='%s'", __LINE__, $desc_next));
+          $syn_dblink);
+      debugmsg(4, sprintf("line %d recursion: desc_next='%s'", __LINE__, $desc_next));
       describe($desc_next, $format, 1);
     } elsif($type eq 'SEQUENCE') {
-      my $sqlstr = q{
-        select sequence_name "Name", 
-          min_value "Min", 
-          max_value "Max", 
-          increment_by "Inc", 
-          cycle_flag "Cycle", 
-          order_flag "Order", 
-          last_number "Last"
-        from all_sequences
+      my $sqlstr = "
+        select sequence_name \"Name\",
+          min_value \"Min\",
+          max_value \"Max\",
+          increment_by \"Inc\",
+          cycle_flag \"Cycle\",
+          order_flag \"Order\",
+          last_number \"Last\"
+        from all_sequences$dblink
         where sequence_name = ?
-          and sequence_owner = ?
-      };
+          and sequence_owner = ?";
       query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
                                op_text => $op_text}, uc($ret[2]), uc($ret[1]));
+
     } elsif($type eq 'TABLE' || $type eq 'VIEW' || $type eq 'TABLE PARTITION') {
-      describe_table($format, $num_rows, $op, $op_text, $ret[2], $ret[1]);
+      describe_table($format, $num_rows, $op, $op_text, $ret[2], $ret[1], $dblink);
 
     } elsif($type eq 'R') {
       my $sqlstr = q{
@@ -4348,6 +4424,9 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-0007 2024/10/23 21:21:00 lzs
+little fix about describing synonyms that refer to tables via dblink
+
 Revision 1.83-0006 2024/08/12 18:50:00 lzs
 Use variables NLS_DATE_FORMAT, NLS_TIMESTAMP_FORMAT, NLS_TIMESTAMP_TZ_FORMAT
 
