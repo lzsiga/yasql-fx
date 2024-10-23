@@ -30,3 +30,5 @@ list of tests:
   test0009.sh - demonstrates special ending sequences
   test0010.sh - testing 'describe table' (cf test0010.txt)
   test0011.sh - testing '\i' terminator (uses table 'emp')
+  test0012.sh - testing different column-types
+  test0013.sh - testing describe with synonyms
