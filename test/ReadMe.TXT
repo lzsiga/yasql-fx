@@ -32,3 +32,4 @@ list of tests:
   test0011.sh - testing '\i' terminator (uses table 'emp')
   test0012.sh - testing different column-types
   test0013.sh - testing describe with synonyms
+  test0014.sh - testing describe over database link
