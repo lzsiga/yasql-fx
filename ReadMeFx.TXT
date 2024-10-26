@@ -1,3 +1,7 @@
+undated. lzs
+  * order by in 'show users'
+  * more information in 'show synonyms'
+
 2024.10.23. lzs
   * little fix about describing synonyms that refer to tables via dblink
   * Version number 1.83-0007
