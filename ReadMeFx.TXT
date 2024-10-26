@@ -1,6 +1,7 @@
 undated. lzs
   * order by in 'show users'
   * more information in 'show synonyms'
+  * new 'show dblinks'
 
 2024.10.23. lzs
   * little fix about describing synonyms that refer to tables via dblink

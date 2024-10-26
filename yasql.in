@@ -2450,6 +2450,13 @@ sub show {
       };
       query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
                                op_text => $op_text});
+    } elsif($1 eq 'dblinks') {
+      my $sqlstr = q{
+        select db_link "Name", username "User", host "Host" from user_db_links t
+      };
+      query($sqlstr, $format, {num_rows => $num_rows, op => $op,
+                               op_text => $op_text});
+
     } else {
       query_err("show", "Unsupported show type", $input);
     }
