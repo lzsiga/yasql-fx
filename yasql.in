@@ -2680,7 +2680,7 @@ sub describe {
       my($table_name, $table_owner, $syn_dblink) = $dbh->selectrow_array(
         $stmt, undef, $object_name);
       if ($syn_dblink) {
-        $syn_dblink= '@'.cut_first($dblink, '.'); # "mydb_link.domain.name" ==> "mydb_link"
+        $syn_dblink= '@'.cut_first($syn_dblink, '.'); # "mydb_link.domain.name" ==> "mydb_link"
       }
       debugmsg(4,
         sprintf(
@@ -2688,6 +2688,10 @@ sub describe {
           "table_name='%s' table_owner='%s' dblink='%s'",
           __LINE__, $stmt, uc($ret[2]), uc($ret[1]),
           $table_name.$dblink, $table_owner, $syn_dblink));
+
+      printf ("%s%s%s%s is synonym to %s%s%s%s%s\n\n",
+        uc($schema), ($schema ? '.' : ''), $object_name, uc($dblink),
+        $table_owner, ($table_owner ? '.' : ''), $table_name, $syn_dblink, uc($dblink));
 
       my $desc_next= sprintf ('desc %s%s'.'%s'.'%s%s',
           $table_owner, ($table_owner? '.': ''),
