@@ -2689,14 +2689,21 @@ sub describe {
           __LINE__, $stmt, uc($ret[2]), uc($ret[1]),
           $table_name.$dblink, $table_owner, $syn_dblink));
 
-      printf ("%s%s%s%s is synonym to %s%s%s%s%s\n\n",
+      printf (STDERR "%s%s%s%s is synonym to %s%s%s%s%s\n",
         uc($schema), ($schema ? '.' : ''), $object_name, uc($dblink),
         $table_owner, ($table_owner ? '.' : ''), $table_name, $syn_dblink, uc($dblink));
+      if ($dblink && $syn_dblink) {
+        query_err('describe', sprintf ("Too many database links ('%s', '%s')", $dblink, $syn_dblink));
+        return;
+      }
+      print STDERR "\n";
 
+      my $forward_dblink= $syn_dblink . $dblink;
       my $desc_next= sprintf ('desc %s%s'.'%s'.'%s%s',
           $table_owner, ($table_owner? '.': ''),
           $table_name,
-          $syn_dblink);
+          $forward_dblink);
+
       debugmsg(4, sprintf("line %d recursion: desc_next='%s'", __LINE__, $desc_next));
       describe($desc_next, $format, 1);
     } elsif($type eq 'SEQUENCE') {
