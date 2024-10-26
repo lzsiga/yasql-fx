@@ -3,6 +3,7 @@ undated. lzs
   * more information in 'show synonyms'
   * new 'show dblinks'
   * information message in 'describe' about 'synonyms'
+    mind you, 'dblink over dblink' doesn't seem to work
 
 2024.10.23. lzs
   * little fix about describing synonyms that refer to tables via dblink
