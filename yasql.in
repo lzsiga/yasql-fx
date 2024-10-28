@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0007 2024/10/23 21:21:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-0008 2024/10/28 18:22:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -58,7 +58,7 @@ use vars qw(
   $incomment $csv_filehandle_open $csv_max_lines $nohires $notextcsv $csv
   $sysconf $sysconfdir $quitting $sigintcaught %conf %prompt $prompt_length
   @sqlpath %set $opt_batch $opt_notbatch $opt_headers
-  $lc_ctype_charset $lc_ctype_encoding
+  $lc_ctype_charset $lc_ctype_encoding $ora_database_name $ora_database_domain
 );
 
 $opt_debug= 0;
@@ -119,7 +119,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0007 2024/10/23 21:21:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0008 2024/10/28 18:22:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -246,7 +246,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0007 2024/10/23 21:21:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0008 2024/10/28 18:22:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -992,12 +992,36 @@ sub db_connect {
     debugmsg(2,"Fetching version banner");
     my $banner = $dbhandle->selectrow_array(
       "select banner from v\$version where banner like 'Oracle%'");
+
+    my $ora_database_netto= '';
+    my @ora_inf = $dbhandle->selectrow_array(
+      "select ora_database_name, user, uid,
+       sys_context('USERENV', 'SID') sid, sys_context('USERENV', 'SESSIONID') sessionid,
+       sys_context('USERENV', 'SERVER_HOST') srvhost, sys_context('USERENV', 'SERVICE_NAME') srvname
+       from sys.dual");
+    if (@ora_inf) {
+      $ora_database_name= $ora_inf[0];
+    }
+    if ($ora_database_name) {
+      $ora_database_netto=  cut_first($ora_database_name, '.');
+      $ora_database_domain= but_first($ora_database_name, '.');
+    }
+
     if(!$opt_batch) {
       if($banner) {
-        print "Connected to: $banner\n\n";
+        print "Connected to: $banner\n";
       } else {
         print "Connection successful!\n";
       }
+      if ($ora_database_name) {
+        my ($unused, $ora_user, $ora_uid, $ora_sid, $ora_sessionid,
+          $ora_shost, $ora_sname)= @ora_inf;
+        printf("Database=%s%s, Server=%s@%s, User=%s, Uid=%s, Sid=%s, Sessionid=%s\n",
+          $ora_database_netto, $ora_database_domain,
+          $ora_sname, $ora_shost,
+          $ora_user, $ora_uid, $ora_sid, $ora_sessionid);
+      }
+      print "\n"
     }
 
     if($banner =~ / (\d+)\.(\d+)\.([\d\.]+)/) {
@@ -2506,7 +2530,7 @@ sub describe_owner_select {
   my $res;
 
   if    ($schema) { $res= 'owner'; }
-  else            { $res= 'NULL owner'; }
+  else            { $res= 'user owner'; }
   return $res;
 }
 
@@ -2556,6 +2580,18 @@ sub describe_table {
         uc($table_name));
 }
 
+# describe_lookup_dblink: (helyi vagy tavoli) dblink adatai
+sub get_domain_name {
+  my ($dblink)= @_;
+  if (not $dblink) { return $ora_database_domain; }
+  my $sqlstr = sprintf('select global_name from global_name%s', $dblink);
+  my ($dbname) = $dbh->selectrow_array($sqlstr, undef);
+  if (not $dbname) { return ''; }
+  return but_first($dbname, '.');
+}
+
+# depending on parameter '$schema' being filled,
+# 'describe_lookup_object_1' reads from 'user_objects' or 'all_objects'
 sub describe_lookup_object_1 {
   my ($object,$schema,$dblink,$nosynonym) = @_;
   my $sqlstr = sprintf(
@@ -2573,23 +2609,79 @@ sub describe_lookup_object_1 {
   return @ret;
 }
 
-# rutin for describe: read user_objects / all_objects
+# 'describe_lookup_object_2': a special version, that only suitable
+# for dblinks
+sub describe_lookup_object_2 {
+  my ($object,$dblink) = @_;
+  my $sqlstr =
+     "select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id".
+     ", created, null last_ddl_time, null timestamp, null status".
+     " from all_db_links${dblink} where owner in (user,'PUBLIC') and".
+     " db_link=?".
+     " order by decode(owner,'PUBLIC',2,1)";
+  debugmsg(3, sprintf("line %d trying sql '%s'\n?=%s", __LINE__, $sqlstr, uc($object)));
+
+  my @ret = $dbh->selectrow_array($sqlstr, undef, uc($object));
+  debugmsg(3, sprintf("line %d ret=", __LINE__).Dumper(@ret));
+  return @ret;
+}
+
+# 'describe_lookup_object' calls 'describe_lookup_object_1'
+# in special cases, when the first try fails,
+# it tries it again:
+#
+#   if '$schema' is not set, it tries with schema='PUBLIC'
+#      e.g. DUAL -> PUBLIC.DUAL(synonym) -> SYS.DUAL(table)
+#
+#   if '$schema' is set, it might be a database-link
+#      e.g. NAMEPART1.NAMEPART2 is a valid name from a database-link
+#
+#   or, if nothing else helps it still might be a database-link,
+#      if '.'||ora_database_name is concatenated
+#
 sub describe_lookup_object {
   my ($object,$schema,$dblink,$nosynonym) = @_;
   my @ret= describe_lookup_object_1($object, $schema, $dblink, $nosynonym);
 
-  if (not @ret and uc($schema) ne 'PUBLIC') {
-    @ret= describe_lookup_object_1($object, 'PUBLIC', $dblink, $nosynonym);
+  if (not @ret) {
+    if ($schema eq '') {
+      if (not $nosynonym) {
+        @ret= describe_lookup_object_1($object, 'PUBLIC', $dblink, 0);
+      }
+    } else {
+      @ret= describe_lookup_object_1($schema. '.' .$object, '', $dblink, $nosynonym);
+    }
   }
+  if (not @ret) {
+    if ($ora_database_domain) {
+      my $fullname= ($schema ? $schema . '.' : '') . $object . $ora_database_domain;
+      @ret= describe_lookup_object_2($fullname, $dblink);
+    }
+  }
+
   return @ret;
 }
 
+# the part before the first separator-character
 sub cut_first {
     my ($str, $sep)= @_;
 
     my $pos= index($str, $sep);
-    if ($pos==-1) { $pos= length($str); }
-    return substr($str, 0, $pos);
+    my $retval;
+    if ($pos == -1) { $retval= $str; }
+    else            { $retval= substr($str, 0, $pos); }
+    return $retval;
+}
+
+# the part that starts with the first separator-character
+sub but_first {
+    my ($str, $sep)= @_;
+
+    my $pos= index($str, $sep);
+    my $retval;
+    if ($pos == -1) { $retval= ''; }
+    else            { $retval= substr($str, $pos); }
+    return $retval;
 }
 
 sub describe {
@@ -2616,7 +2708,7 @@ sub describe {
 
     my $schema;
     my $dblink= '';
-    if($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#]+)\@([a-zA-Z0-9_\$\#]+)$/) {
+    if($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#.]+)\@([a-zA-Z0-9_\$\#]+)$/) {
       $schema = $1;
       $object = $2;
       $dblink = "\@$3";
@@ -2647,6 +2739,11 @@ sub describe {
           ."constraint_name = ?",
         undef, uc($object)
       );
+    }
+
+    if (not @ret) {
+      query_err('describe', "Object '$object' (schema '$schema', dblink '$dblink') is not found");
+      return;
     }
 
     if($ret[0] eq 'INDEX') {
@@ -2697,6 +2794,7 @@ sub describe {
         return;
       }
       print STDERR "\n";
+      STDERR->flush();
 
       my $forward_dblink= $syn_dblink . $dblink;
       my $desc_next= sprintf ('desc %s%s'.'%s'.'%s%s',
@@ -2828,8 +2926,15 @@ sub describe {
       wrn("Not implemented (yet)");
     } elsif($type eq 'TRIGGER') {
       wrn("Not implemented (yet)");
+    } elsif($type eq 'DATABASE LINK') {
+      my $sqlstr=
+        "select owner \"Owner\", db_link \"Name\", username \"User\", host \"Host\"".
+        " from all_db_links${dblink}".
+        " where owner=? and db_link=?";
+      query($sqlstr, $format, {num_rows => $num_rows, op => $op,
+                               op_text => $op_text}, uc($ret[1]), uc($ret[2]));
     } else {
-      query_err('describe', "Object $object not found");
+      query_err('describe', "Object '$object' schema '$schema' of type '$type' is not supported yet");
     }
   }
 }
@@ -3682,6 +3787,7 @@ sub wrn {
   # outputs a warning
 
   print STDERR "Warning: $msg\n";
+  STDERR->flush();
 }
 
 sub quit {
@@ -4445,6 +4551,14 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-0008 2024/10/28 18:22:00 lzs
+Order by in 'show users'
+More information in 'show synonyms'
+New 'show dblinks'
+Information message in 'describe' about 'synonyms'
+Describe on dblink (partial)
+Information at startup: database, server, user, uid, sid, sessionid
+
 Revision 1.83-0007 2024/10/23 21:21:00 lzs
 little fix about describing synonyms that refer to tables via dblink
 
@@ -4550,7 +4664,7 @@ Now ignoring most SET commands so we don't tack them onto queries
 Fixed permissions in tarball
 
 Revision 1.80  2001/08/01 18:06:27  nshafer
-Fixed bug with delayed $term initialization
+Fixed bug with delayed $term initialization
 
 Revision 1.79  2001/08/01 17:52:35  nshafer
 Fixed compatibility issues with the data dictionary in Oracle 7.  Fixed ordering

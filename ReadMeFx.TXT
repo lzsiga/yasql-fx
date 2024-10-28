@@ -1,9 +1,12 @@
-undated. lzs
+2024.10.28. lzs
   * order by in 'show users'
   * more information in 'show synonyms'
   * new 'show dblinks'
   * information message in 'describe' about 'synonyms'
     mind you, 'dblink over dblink' doesn't work
+  * describe on dblink (partial)
+  * information at startup: database, server, user, uid, sid, sessionid
+  * Version number 1.83-0008
 
 2024.10.23. lzs
   * little fix about describing synonyms that refer to tables via dblink
