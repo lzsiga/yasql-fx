@@ -1,3 +1,7 @@
+undated
+  * 'prompt' command (see test/test0015.sh)
+  * Version number 1.83-0009
+
 2024.10.28. lzs
   * order by in 'show users'
   * more information in 'show synonyms'

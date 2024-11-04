@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0008 2024/10/28 18:22:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-0009 2024/10/28 18:22:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -119,7 +119,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0008 2024/10/28 18:22:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0009 2024/10/28 18:22:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -246,7 +246,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0008 2024/10/28 18:22:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0009 2024/10/28 18:22:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -1209,6 +1209,7 @@ sub process_input {
                                                                     last SWITCH;
       $input =~ /^\s*(set\s*[^;\/\\]+)\s*$/i and set_cmd($1),       last SWITCH;
       $input =~ /^\s*exec(?:ute)?\s*(.*)\s*$/i and exec_cmd($1),    last SWITCH;
+      $input =~ /^\s*prom(pt?)?\s+(.*)\s*$/i and prompt_cmd($2),    last SWITCH;
       $input =~ /^\s*\\d\s*$/ and show('show objects', 'table'),    last SWITCH;
       $input =~ /^\s*\\dt\s*$/ and show('show tables', 'table'),    last SWITCH;
       $input =~ /^\s*\\di\s*$/ and show('show indexes', 'table'),   last SWITCH;
@@ -1671,6 +1672,14 @@ sub exec_cmd {
   );
 
   query($sqlstr, 'table');
+}
+
+sub prompt_cmd {
+  my($str) = @_;
+  $str =~ s/\s+$//g;
+  $str =~ s/;$//g;
+  print STDOUT $str."\n";
+  STDOUT->flush();
 }
 
 sub edit {
@@ -4551,6 +4560,9 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-0009 (undated) lzs
+Command 'prompt' has been added.
+
 Revision 1.83-0008 2024/10/28 18:22:00 lzs
 Order by in 'show users'
 More information in 'show synonyms'
