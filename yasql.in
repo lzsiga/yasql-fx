@@ -3142,7 +3142,7 @@ sub query {
         }
       }
     }
-
+    STDERR->flush();
     close(FOUT);
 
     finish_query($sth);
