@@ -17,6 +17,8 @@ more complex sample:
       fi
   done
 
+also there is 'compareOldNew.sh' for this
+
 list of tests:
 
   test0001.sh - demonstrates a problem that has been solved in version 1.83-1
