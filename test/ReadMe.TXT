@@ -3,21 +3,15 @@ usage samples:
   YaSql=../yasql.in               ./test0004.sh
   YaSql=/usr/local/bin/yasql.orig ./test0004.sh
 
-more complex sample:
+using script compareOldnew.sh:
 
-  for i in ./test????.sh; do
-      d=$(dirname "$i")
-      c=$(basename "$i" .sh)
-      YaSql=../yasql.in "$i" &>"$c".out.new
-      YaSql=/usr/local/bin/yasql.orig "$i" &>"$c".out.old
-      if cmp "$c".out.old "$c".out.new 2>/dev/null; then
-          echo "$i gave the same results"
-      else
-          echo "$i gave different results"
-      fi
-  done
+    $ Old=/usr/local/bin/yasql.orig New=../yasql.in ./compareOldnew.sh test0015.sh
 
-also there is 'compareOldNew.sh' for this
+    running './test0015.sh' with Old='/usr/local/bin/yasql.orig'
+    running './test0015.sh' with New='../yasql.in'
+    log-files 'test0015.old.log' and 'test0015.new.log' differ
+
+    $ diff -u 'test0015.old.log' 'test0015.new.log'
 
 list of tests:
 
@@ -36,4 +30,4 @@ list of tests:
   test0013.sh - testing describe with synonyms
   test0014.sh - testing describe over database link
   test0015.sh - testing 'prompt' (write literal to stdout)
-  
+  test0016.sh - handing standalone comment (single or multiline)
