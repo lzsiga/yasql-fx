@@ -1385,6 +1385,13 @@ sub execute_query {
       }
 }
 
+# store a text-part except if we are at the very beginning
+sub conditional_store {
+  my($intoptr, $value) = @_;
+# debugmsg(4, sprintf("conditional_store(line %d) into='%s' value='%s'\n", __LINE__, $$intoptr, $value));
+  if ($$intoptr) { $$intoptr .= $value; }
+}
+
 sub parse_input {
   my($input) = @_;
   debugmsg(3, "parse_input called", @_);
@@ -1448,15 +1455,15 @@ sub parse_input {
       if ($incomment==1) {  # multiline comment
         if ($match eq '*/') {
           $incomment= 0;
-          $qbuffer .= $pre.$match;
+          conditional_store(\$qbuffer, $pre.$match);
           $rest= $post;
         } else {
-          $qbuffer .= $rest;
+          conditional_store(\$qbuffer, $rest);
           $rest= '';
         }
       } else {              # singleline comment (processed)
         $incomment= 0;
-        $qbuffer .= $pre.$match;
+        conditional_store(\$qbuffer, $pre.$match);
         $rest= $post;
       }
       next;
@@ -1485,7 +1492,7 @@ sub parse_input {
     } elsif ($match eq '/*' || $match eq '--') {
       if ($match eq '/*') { $incomment= 1; }
       else                { $incomment= 2; }
-      $qbuffer .= $pre.$match;
+      conditional_store(\$qbuffer, $pre.$match);
       $rest= $post;
       next;
     }
@@ -1518,9 +1525,8 @@ sub parse_input {
     }
   }
 
-  $qbuffer .=  "\n";
-
-  debugmsg(4,"qbuffer: [$qbuffer], input: [$input]");
+  conditional_store(\$qbuffer, "\n");
+  debugmsg(4, sprintf("line=%d qbuffer: [%s], input: [%s]", __LINE__, $qbuffer, $input));
 
   if($inquotes) {
     return(get_prompt($quote));
