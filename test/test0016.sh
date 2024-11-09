@@ -1,6 +1,8 @@
 #!/bin/sh
 
-# Testing standalone comment
+# Testing standalone comments (not inside a SQL-statement)
+# To run it, create a file called ~/secret/scott.dbuid than contains a
+# valid user/password@tns sequence, e.g. scott/tiger@orcl
 
 Perl="${Perl:-$(which perl)}"
 PerlOpt="${PerlOpt:-}"
@@ -12,7 +14,7 @@ export LC_CTYPE=en_US.UTF-8
 export NLS_LANG=american_america.AL32UTF8
 export NLS_NCHAR=AL32UTF8
 
-"$Perl" $PerlOpt "$YaSql" $YaSqlOpt $(cat ~/secret/gyartas_test.dbuid) <<DONE
+"$Perl" $PerlOpt "$YaSql" $YaSqlOpt $(cat ~/secret/scott.dbuid) <<DONE
 
 prompt singleline comment, followed by select
 -- This should be ignored
@@ -45,6 +47,10 @@ prompt more comment, followed by describe
    */
   -- of no importance
 describe dual
+
+prompt comment in the same line
+/* select */ select * from dual;
+/* describe */ describe dual
 
 exit
 DONE
