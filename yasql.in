@@ -1209,7 +1209,7 @@ sub process_input {
                                                                     last SWITCH;
       $input =~ /^\s*(set\s*[^;\/\\]+)\s*$/i and set_cmd($1),       last SWITCH;
       $input =~ /^\s*exec(?:ute)?\s*(.*)\s*$/i and exec_cmd($1),    last SWITCH;
-      $input =~ /^\s*prom(pt?)?\s+(.*)\s*$/i and prompt_cmd($2),    last SWITCH;
+      $input =~ /^\s*prom(pt?)?\s*(.*)\s*$/i and prompt_cmd($2),    last SWITCH;
       $input =~ /^\s*\\d\s*$/ and show('show objects', 'table'),    last SWITCH;
       $input =~ /^\s*\\dt\s*$/ and show('show tables', 'table'),    last SWITCH;
       $input =~ /^\s*\\di\s*$/ and show('show indexes', 'table'),   last SWITCH;
@@ -1682,6 +1682,7 @@ sub exec_cmd {
 
 sub prompt_cmd {
   my($str) = @_;
+# debugmsg(3, sprintf("line %d prompt_cmd text='%s'", __LINE__, $str));
   $str =~ s/\s+$//g;
   $str =~ s/;$//g;
   print STDOUT $str."\n";
