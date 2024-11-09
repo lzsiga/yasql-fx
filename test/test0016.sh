@@ -16,31 +16,43 @@ export NLS_NCHAR=AL32UTF8
 
 "$Perl" $PerlOpt "$YaSql" $YaSqlOpt $(cat ~/secret/scott.dbuid) <<DONE
 
+prompt
+prompt ===
 prompt singleline comment, followed by select
 -- This should be ignored
 SELECT * FROM dual;
 
+prompt
+prompt ===
 prompt singleline comment, followed by describe
 -- This should be ignored
 describe dual
 
+prompt
+prompt ===
 prompt multiline comment, followed by select
   /* This should be ignored
    */
 SELECT * FROM dual;
 
+prompt
+prompt ===
 prompt multiline comment, followed by describe
   /* This should be ignored
    */
 describe dual
 
-prompt more comments, followed by select
+prompt
+prompt ===
+prompt more comments
   -- ignore this
   /* This should be ignored
    */
   -- of no importance
 SELECT * FROM dual;
 
+prompt
+prompt ===
 prompt more comment, followed by describe
   -- ignore this
   /* This should be ignored
@@ -48,8 +60,14 @@ prompt more comment, followed by describe
   -- of no importance
 describe dual
 
-prompt comment in the same line
+prompt
+prompt ===
+prompt comment in the same line, followed by select
 /* select */ select * from dual;
+
+prompt
+prompt ===
+prompt comment in the same line, followed by describe
 /* describe */ describe dual
 
 exit
