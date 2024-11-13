@@ -3302,7 +3302,8 @@ sub format_output_header {
           if($types->[$i] == 3 || $types->[$i] == 8) { # SQLT_INT, SQLT_LNG
             print $fh sprintf("%*s", $widths->[$i], $fields->[$i]);
           } else {
-            print $fh sprintf("%-*s", $widths->[$i], $fields->[$i]);
+            if ($i < $#$fields) { print $fh sprintf("%-*s", $widths->[$i], $fields->[$i]); }
+            else                { print $fh $fields->[$i]; }
           }
         }
         print $fh "\n";
@@ -3502,10 +3503,11 @@ sub format_output {
           # Strip out plain ole \r's since SQL*Plus seems to...
           $data =~ s/\r//g;
           $data = 'NULL' unless defined $data;
-          if($types->[$i] == 3 || $types->[$i] == 8) {
+          if($types->[$i] == 3 || $types->[$i] == 8) { # SQLT_INT, SQLT_LNG
             print FOUT sprintf("%$widths[$i]s", $data);
           } else {
-            print FOUT sprintf("%-$widths[$i]s", $data);
+            if ($i < $#$fields) { print FOUT sprintf("%-*s", $widths[$i], $data); }
+            else                { print FOUT $data; }
           }
         }
         print FOUT "\n";
@@ -3529,7 +3531,8 @@ sub format_output {
             if($types->[$i] == 3 || $types->[$i] == 8) { # SQLT_INT, SQLT_LNG
               print FOUT sprintf("%$widths[$i]s", $data);
             } else {
-              print FOUT sprintf("%-$widths[$i]s", $data);
+              if ($i < $#$fields) { print FOUT sprintf("%-*s", $widths[$i], $data); }
+              else                { print FOUT $data; }
             }
             $res->[$i] = undef; # 20240302.LZS
             # There is some problem within Perl and/or Oracle-DBD
@@ -3537,7 +3540,7 @@ sub format_output {
             # Maybe somewhere function 'Perl_sv_setpvn_mg' should be called
             # instead of 'Perl_sv_setpvn'
             # Or 'Perl_sv_setpvn' should internally call the '_mg' version.
-            # Anyway, when every system on the world will have been fixed,
+            # Anyway, when every system in the world will have been fixed,
             # this workaround will be removed.
           }
           print FOUT "\n";
