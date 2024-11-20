@@ -3382,6 +3382,43 @@ sub format_output_sql {
     return($count, 'selected');
 }
 
+package StringParts {
+  use fields qw (orig parts nparts maxlen ralign);
+
+  sub fromStr {
+    my $class= shift;
+    my ($orig)= @_;
+    my StringParts $self= {};
+    $self->{orig}= $orig;
+    $self->{ralign}= 0;
+
+    my @parts= split("\n", $orig, -1);
+    $self->{parts}= \@parts;
+    $self->{nparts}= scalar(@parts);
+
+    my $nmax= 0;
+    for (my $i= 0; $i<scalar(@parts); ++$i) {
+      my $n= length($parts[$i]);
+      if ($n>$nmax) { $nmax= $n; }
+    }
+    $self->{maxlen}= $nmax;
+
+    return bless($self, $class);
+  }
+
+  sub fromNull {
+    return fromStr($_[0], "NULL");
+  }
+
+  sub fromNum {
+    my $class= $_[0];
+    my $num=   $_[1];
+    my $self= fromStr($class, ''.$num);
+    $self->{ralign}= 1;
+    return $self;
+  }
+}
+
 sub format_output {
   my($sth, $format, $num_rows, $sqlstr, $op, $op_text) = @_;
   debugmsg(3, "format_output called", @_);
