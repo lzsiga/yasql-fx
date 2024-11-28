@@ -2619,7 +2619,10 @@ package DbObjectData {
     if (exists($vpar[1])) { $select_owner_spec= $vpar[1]; }
 
     my $parts= DescribeStmtParts->new();
-    my($tmp);
+    my($tmp,$pdblink);
+
+    if ($self->{dblink}) { $pdblink= '@'.$self->{dblink}; }
+    else                 { $pdblink= '';                  }
 
     if ($vnflag) {
         if ($self->{owner}) { $tmp = 'all_'.$tblname; }
@@ -2627,8 +2630,7 @@ package DbObjectData {
     } else {
         $tmp = $tblname;
     }
-    if ($self->{dblink}) { $tmp .= '@'.$self->{dblink}; }
-    $parts->{table}= $tmp;
+    $parts->{table}= $tmp.$pdblink;
 
     if ($self->{owner}) {
         $parts->{where_owner}= sprintf("%s=? and", $owner_field);
@@ -2636,12 +2638,8 @@ package DbObjectData {
         $parts->{where_owner}= '';
     }
 
-    if    ($self->{owner})    { $tmp= 'owner "Owner"'; }
-    elsif (! $self->{dblink}) { $tmp= 'USER "Owner"';  }
-    else {
-      if ($select_owner_spec==1) { $tmp= '\'(link-target)\' "Owner"'; }
-      else                       { $tmp= 'NULL "Owner"'; }
-    }
+    if    ($self->{owner})  { $tmp= 'owner "Owner"'; }
+    else                    { $tmp= 'sys.login_user'.$pdblink.' "Owner"'; }
     $parts->{select_owner}= $tmp;
 
     return bless($parts, 'DescribeStmtParts');
