@@ -2720,17 +2720,21 @@ package DescribeRuts {
   # describe_lookup_object_1: static method
   # depending on parameter '$schema' being filled,
   # 'describe_lookup_object_1' reads from 'user_objects' or 'all_objects'
+  # $fsynonym: 0/1/2 = any / not synonym / synonym
   sub describe_lookup_object_1 {
-    my ($dbobj, $nosynonym) = @_;
+    my ($dbobj, $fsynonym) = @_;
     my $stmtParts= $dbobj->stmtParts_vn_table('objects');
+    my $where_synonym= '';
+    if    ($fsynonym==1) { $where_synonym= 'and object_type != \'SYNONYM\''; }
+    elsif ($fsynonym==2) { $where_synonym= 'and object_type =  \'SYNONYM\''; }
     my $sqlstr = sprintf(
        "select object_type, %s, object_name, object_id, created".
        ", last_ddl_time, timestamp, status".
-       " from %s where %s object_name=?".
-       ($nosynonym ? " and object_type != 'SYNONYM'" : ""),
+       " from %s where %s object_name=? %s",
        $stmtParts->{select_owner},
        $stmtParts->{table},
-       $stmtParts->{where_owner});
+       $stmtParts->{where_owner},
+       $where_synonym);
     my @bindvars= ();
     if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
     push(@bindvars, $dbobj->{name});
@@ -2784,10 +2788,10 @@ package DescribeRuts {
 
     if (not @ret) {
       if ($dbobj->{owner} eq '') {
-        if (not $nosynonym) {
+        if ($nosynonym != 1) {
           my $tmp= $dbobj->clone();
           $tmp->{owner}= 'PUBLIC';
-          @ret= describe_lookup_object_1($tmp, 0);
+          @ret= describe_lookup_object_1($tmp, 2); # search for public synonym
           if (@ret && $ret[1]) {
             $dbobj->{owner}= $ret[1]; # i.e. 'PUBLIC';
           }
@@ -2828,7 +2832,7 @@ package DescribeRuts {
   sub describe {
     my($dbobj, $expar, $nosynonym) = @_;
     ::debugmsg(3, sprintf("line %d describe called input='%s'", __LINE__, Dumper($dbobj)), @_);
-    # This describes a table, view, sequence, or synonym  by listing it's 
+    # This describes a table, view, sequence, or synonym  by listing it's
     # columns and their attributes
 
     # look in all_constraints for the object first.  This is because oracle
@@ -3072,7 +3076,7 @@ sub describe {
   my $expar= ExecutionParams->new($format, $num_rows, $op, $op_text);
 
   # convert to lowercase for comparison operations
-  # 20241126.LZS <FIXME> should be uppercase, unless "quotes"
+  # 20241126.LZS <FIXME> should be uppercase, unless between "quotes"
   $input = lc($input);
 
   # make sure we're still connected to the database
@@ -3090,11 +3094,11 @@ sub describe {
 
     my $schema= '';
     my $dblink= '';
-    if($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#.]+)\@([a-zA-Z0-9_\$\#]+)$/) {
+    if($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#.]+)\@([a-zA-Z0-9_\$\#\.]+)$/) {
       $schema = $1;
       $object = $2;
       $dblink = $3;
-    } elsif($object =~ /^([a-zA-Z0-9_\$\#]+)\@([a-zA-Z0-9_\$\#]+)$/) {
+    } elsif($object =~ /^([a-zA-Z0-9_\$\#]+)\@([a-zA-Z0-9_\$\#\.]+)$/) {
       $schema = '';
       $object = $1;
       $dblink = $2;
