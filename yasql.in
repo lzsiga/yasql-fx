@@ -42,6 +42,7 @@ use Benchmark;
 use Getopt::Long;
 use Encode qw(is_utf8 decode);
 use POSIX qw(locale_h);
+use Storable;
 
 # Load DBD::Oracle early to work around SunOS bug. See
 # http://article.gmane.org/gmane.comp.lang.perl.modules.dbi.general/207
@@ -2506,55 +2507,171 @@ sub show {
   }
 }
 
-# helper-rutins for 'describe'
-#
-# core   schema dblink result
-# ----   ------ ------ ------
-# tables -      -      select NULL OWNER, list from user_tables        where table_name=?
-# tables -      DBLINK select NULL OWNER, list from user_tables@DBLINK where table_name=?
-# tables SCHEMA -      select list from all_tables         where owner='SCHEMA' and table_name=?
-# tables SCHEMA DBLINK select list from all_tables@DBLINK  where owner='SCHEMA' and table_name=?
+# the part before the first separator-character
+sub cut_first {
+    my ($str, $sep)= @_;
 
-sub describe_tablename {
-  my($core, $schema, $dblink) = @_;
-  my $res;
+    my $pos= index($str, $sep);
+    my $retval;
+    if ($pos == -1) { $retval= $str; }
+    else            { $retval= substr($str, 0, $pos); }
+    return $retval;
+}
 
-  if ($schema) { $res = 'all_';  }
-  else         { $res = 'user_'; }
+# the part that starts with the first separator-character
+sub but_first {
+    my ($str, $sep)= @_;
 
-  $res .= $core;
+    my $pos= index($str, $sep);
+    my $retval;
+    if ($pos == -1) { $retval= ''; }
+    else            { $retval= substr($str, $pos); }
+    return $retval;
+}
 
-  if ($dblink) {
-    my $prefix= '';
-    if (substr($dblink,0,1) ne '@') { $prefix= '@'; }
-    $res .= $prefix.$dblink;
+# describe_lookup_dblink: (helyi vagy tavoli) dblink adatai
+sub get_domain_name {
+  my ($dblink)= @_;
+  if (not $dblink) { return $ora_database_domain; }
+  my $sqlstr = sprintf('select global_name from global_name%s', $dblink);
+  my ($dbname) = $dbh->selectrow_array($sqlstr, undef);
+  if (not $dbname) { return ''; }
+  return but_first($dbname, '.');
+}
+
+package DescribeStmtParts {
+  use fields qw(table, where_owner, select_owner);
+
+  sub new {
+    my $self= {};
+    $self->{table}= '';
+    $self->{where_owner}= '';
+    $self->{select_owner}= '';
+    return $self;
+  }
+}
+
+package DbObjectData {
+  use fields qw(dblink, owner, name, type);
+
+  # when these fields come form command-line with "quotes",
+  # or from the data-dictionary, they are not to be changed
+  sub new_oc {
+    my ($classname, $self)= ($_[0], {});
+    $self->{dblink}= $_[1];
+    $self->{owner}= $_[2];
+    $self->{name}= $_[3];
+    $self->{type}= '';
+    return bless($self, $classname);
   }
 
-  return $res;
+  # when these fields come form command-line (without "quotes"),
+  # they are to be converted to upper case
+  sub new_uc {
+    my ($classname, $self)= ($_[0], {});
+    $self->{dblink}= uc($_[1]);
+    $self->{owner}= uc($_[2]);
+    $self->{name}= uc($_[3]);
+    $self->{type}= '';
+    return bless($self, $classname);
+  }
+
+  sub clone {
+    return Storable::dclone($_[0]);
+  }
+
+  sub toStr {
+    my ($self, $tmp, $fLong)= ($_[0], '', 0);
+
+    if (exists($_[1])) { $fLong= $_[1]; }
+
+    if ($self->{owner}) { $tmp .= $self->{owner} . '.' }
+    $tmp .= $self->{name};
+
+    if ($self->{dblink}) { $tmp .= '@'.$self->{dblink}; }
+
+    if ($fLong && $self->{type}) {
+        $tmp .= sprintf (' (type %s)', $self->{type});
+    }
+
+    return $tmp;
+  }
+
+  # variable name: table name "objects" becomes "all_objects" or "user_objects",
+  # with optional "@dblink"
+  sub stmtParts_vn_table {
+    my $self= shift;
+    my $vflag= 1;
+    return stmtParts_core($self, $vflag, @_);
+  }
+
+  # fix name: table names "dual" stays "dual" with optional "@dblink"
+  sub stmtParts_fn_table {
+    my $self= shift;
+    my $vflag= 0;
+    return stmtParts_core($self, $vflag, @_);
+  }
+
+  sub stmtParts_core {
+    my($self, $vnflag, $tblname, @vpar)= @_;
+    my($owner_field, $select_owner_spec)= ('owner', 0);
+    if (exists($vpar[0])) { $owner_field= $vpar[0]; }
+    if (exists($vpar[1])) { $select_owner_spec= $vpar[1]; }
+
+    my $parts= DescribeStmtParts->new();
+    my($tmp);
+
+    if ($vnflag) {
+        if ($self->{owner}) { $tmp = 'all_'.$tblname; }
+        else                { $tmp = 'user_'.$tblname; }
+    } else {
+        $tmp = $tblname;
+    }
+    if ($self->{dblink}) { $tmp .= '@'.$self->{dblink}; }
+    $parts->{table}= $tmp;
+
+    if ($self->{owner}) {
+        $parts->{where_owner}= sprintf("%s=? and", $owner_field);
+    } else {
+        $parts->{where_owner}= '';
+    }
+
+    if    ($self->{owner})    { $tmp= 'owner "Owner"'; }
+    elsif (! $self->{dblink}) { $tmp= 'USER "Owner"';  }
+    else {
+      if ($select_owner_spec==1) { $tmp= '\'(link-target)\' "Owner"'; }
+      else                       { $tmp= 'NULL "Owner"'; }
+    }
+    $parts->{select_owner}= $tmp;
+
+    return bless($parts, 'DescribeStmtParts');
+  }
 }
 
-sub describe_owner_where {
-  my($schema, $dblink)= @_;
-  my $res;
+package ExecutionParams {
+  use fields qw(format num_rows op op_text result_output);
 
-  if    ($schema) { $res= sprintf("owner='%s' and ", uc($schema)); }
-  else            { $res= ''; }
-  return $res;
+  sub new {
+    my $classname= $_[0];
+    my $self= {};
+    $self->{format}=   $_[1];
+    $self->{num_rows}= $_[2];
+    $self->{op}=       $_[3];
+    $self->{op_text}=  $_[4];
+    $self->{result_output}= 1;
+    return bless($self, $classname);
+  }
 }
 
-sub describe_owner_select {
-  my($schema, $dblink)= @_;
-  my $res;
+package DescribeRuts {
+  use Data::Dumper;
 
-  if    ($schema) { $res= 'owner'; }
-  else            { $res= 'user owner'; }
-  return $res;
-}
+  # describe_table: static method
+  sub describe_table {
+    my($dbobj, $expar) = @_;
+    my $stmtParts= $dbobj->stmtParts_vn_table('tab_columns');
 
-sub describe_table {
-  my($format, $num_rows, $op, $op_text, $table_name, $owner_name, $dblink) = @_;
-
-  my $sqlstr = sprintf (q{
+    my $sqlstr = sprintf (q{
         select column_name "Name",
                decode(nullable,
                  'N','NOT NULL'
@@ -2590,115 +2707,360 @@ sub describe_table {
             from %s t)
          where %s table_name = ?
          order by column_id},
-      describe_tablename('tab_columns', $owner_name, $dblink),
-      describe_owner_where($owner_name, $dblink)
+      $stmtParts->{table}, $stmtParts->{where_owner}
       );
-  query($sqlstr, $format, {num_rows => $num_rows, op => $op, op_text => $op_text},
-        uc($table_name));
-}
+    printf(STDERR "Fields of %s:\n", $dbobj->toStr(1));
+    STDERR->flush();
+    my @bindvars= ();
+    if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
+    push(@bindvars, $dbobj->{name});
+    ::query_expar($sqlstr, $expar, @bindvars);
+  }
 
-# describe_lookup_dblink: (helyi vagy tavoli) dblink adatai
-sub get_domain_name {
-  my ($dblink)= @_;
-  if (not $dblink) { return $ora_database_domain; }
-  my $sqlstr = sprintf('select global_name from global_name%s', $dblink);
-  my ($dbname) = $dbh->selectrow_array($sqlstr, undef);
-  if (not $dbname) { return ''; }
-  return but_first($dbname, '.');
-}
+  # describe_lookup_object_1: static method
+  # depending on parameter '$schema' being filled,
+  # 'describe_lookup_object_1' reads from 'user_objects' or 'all_objects'
+  sub describe_lookup_object_1 {
+    my ($dbobj, $nosynonym) = @_;
+    my $stmtParts= $dbobj->stmtParts_vn_table('objects');
+    my $sqlstr = sprintf(
+       "select object_type, %s, object_name, object_id, created".
+       ", last_ddl_time, timestamp, status".
+       " from %s where %s object_name=?".
+       ($nosynonym ? " and object_type != 'SYNONYM'" : ""),
+       $stmtParts->{select_owner},
+       $stmtParts->{table},
+       $stmtParts->{where_owner});
+    my @bindvars= ();
+    if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
+    push(@bindvars, $dbobj->{name});
 
-# depending on parameter '$schema' being filled,
-# 'describe_lookup_object_1' reads from 'user_objects' or 'all_objects'
-sub describe_lookup_object_1 {
-  my ($object,$schema,$dblink,$nosynonym) = @_;
-  my $sqlstr = sprintf(
-     "select object_type, %s, object_name, object_id, created".
-     ", last_ddl_time, timestamp, status".
-     " from %s where %sobject_name=?".
-     ($nosynonym ? " and object_type != 'SYNONYM'" : ""),
-     describe_owner_select($schema, $dblink),
-     describe_tablename('objects', $schema, $dblink),
-     describe_owner_where($schema, $dblink));
-  debugmsg(3, sprintf("line %d trying sql '%s'\n?=%s", __LINE__, $sqlstr, uc($object)));
+    ::debugmsg(3, sprintf("line %d trying sql '%s' schema='%s' name='%s'",
+       __LINE__, $sqlstr, $dbobj->{owner}, $dbobj->{name}));
 
-  my @ret = $dbh->selectrow_array($sqlstr, undef, uc($object));
-  debugmsg(3, sprintf("line %d ret=", __LINE__).Dumper(@ret));
-  return @ret;
-}
+    my @ret = $::dbh->selectrow_array($sqlstr, undef, @bindvars);
+    ::debugmsg(3, sprintf("line %d ret=", __LINE__).Dumper(@ret));
+    return @ret;
+  }
 
-# 'describe_lookup_object_2': a special version, that only suitable
-# for dblinks
-sub describe_lookup_object_2 {
-  my ($object,$dblink) = @_;
-  my $sqlstr =
-     "select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id".
-     ", created, null last_ddl_time, null timestamp, null status".
-     " from all_db_links${dblink} where owner in (user,'PUBLIC') and".
-     " db_link=?".
-     " order by decode(owner,'PUBLIC',2,1)";
-  debugmsg(3, sprintf("line %d trying sql '%s'\n?=%s", __LINE__, $sqlstr, uc($object)));
+  # static method
+  # 'describe_lookup_object_2': a special version, that only suitable
+  # for dblinks
+  sub describe_lookup_object_2 {
+    my $dbobj= $_[0];
+    my $stmtParts= $dbobj->stmtParts_fn_table('all_db_links');
 
-  my @ret = $dbh->selectrow_array($sqlstr, undef, uc($object));
-  debugmsg(3, sprintf("line %d ret=", __LINE__).Dumper(@ret));
-  return @ret;
-}
+    my $sqlstr = sprintf(
+       "select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id".
+       ", created, null last_ddl_time, null timestamp, null status".
+       " from %s".
+       " where owner in (user,'PUBLIC') and db_link=?".
+       " order by decode(owner,'PUBLIC',2,1)",
+       $stmtParts->{table}
+       );
+    ::debugmsg(3, sprintf("line %d trying sql '%s'\n?=%s", __LINE__, $sqlstr, $dbobj->{name}));
 
-# 'describe_lookup_object' calls 'describe_lookup_object_1'
-# in special cases, when the first try fails,
-# it tries it again:
-#
-#   if '$schema' is not set, it tries with schema='PUBLIC'
-#      e.g. DUAL -> PUBLIC.DUAL(synonym) -> SYS.DUAL(table)
-#
-#   if '$schema' is set, it might be a database-link
-#      e.g. NAMEPART1.NAMEPART2 is a valid name from a database-link
-#
-#   or, if nothing else helps it still might be a database-link,
-#      if '.'||ora_database_name is concatenated
-#
-sub describe_lookup_object {
-  my ($object,$schema,$dblink,$nosynonym) = @_;
-  my @ret= describe_lookup_object_1($object, $schema, $dblink, $nosynonym);
+    my @ret = $::dbh->selectrow_array($sqlstr, undef, $dbobj->{name});
+    ::debugmsg(3, sprintf("line %d ret=", __LINE__).Dumper(@ret));
+    return @ret;
+  }
 
-  if (not @ret) {
-    if ($schema eq '') {
-      if (not $nosynonym) {
-        @ret= describe_lookup_object_1($object, 'PUBLIC', $dblink, 0);
+  # 'describe_lookup_object' calls 'describe_lookup_object_1'
+  # in special cases, when the first try fails,
+  # it tries it again:
+  #
+  #   if '$schema' is not set, it tries with schema='PUBLIC'
+  #      e.g. DUAL -> PUBLIC.DUAL(synonym) -> SYS.DUAL(table)
+  #
+  #   if '$schema' is set, it might be a database-link
+  #      e.g. NAMEPART1.NAMEPART2 is a valid name from a database-link
+  #
+  #   or, if nothing else helps it still might be a database-link,
+  #      if '.'||ora_database_name is concatenated
+  # static method
+  sub describe_lookup_object {
+    my ($dbobj,$nosynonym) = @_;
+    my @ret= describe_lookup_object_1($dbobj, $nosynonym);
+
+    if (not @ret) {
+      if ($dbobj->{owner} eq '') {
+        if (not $nosynonym) {
+          my $tmp= $dbobj->clone();
+          $tmp->{owner}= 'PUBLIC';
+          @ret= describe_lookup_object_1($tmp, 0);
+          if (@ret && $ret[1]) {
+            $dbobj->{owner}= $ret[1]; # i.e. 'PUBLIC';
+          }
+        }
+      } else {
+        # it might be a special case: if it is not a "schema.dblink"
+        # then it could be a dblink with dot(s) in its name
+        my $tmp= $dbobj->clone();
+        $tmp->{name}= $tmp->{owner}. '.' .$tmp->{name};
+        $tmp->{owner}= '';
+        @ret= describe_lookup_object_1($tmp, $nosynonym);
+        if (@ret) {
+          $dbobj->{name}=  $tmp->{name};
+          $dbobj->{owner}= $tmp->{owner};
+        }
       }
+    }
+    if (not @ret) {
+#     ::debugmsg(0, sprintf("line %d ora_database_domain='%s'", __LINE__, $::ora_database_domain));
+      if ($::ora_database_domain) {
+        my $tmp= $dbobj->clone();
+        $tmp->{name}= $tmp->{name}.$::ora_database_domain;
+        @ret= describe_lookup_object_2($tmp);
+        if (@ret) {
+#         ::debugmsg(0, sprintf("line %d retname='%s'", __LINE__, $tmp->{name}));
+          $dbobj->{name}= $tmp->{name};
+#         ::debugmsg(0, sprintf("line %d dbobj='%s'", __LINE__, $dbobj->toStr(0)));
+        }
+      }
+    }
+
+    if (@ret) {
+        if (exists($ret[0]) && $ret[0]) { $dbobj->{type}= $ret[0]; }
+    }
+    return @ret;
+  }
+
+  sub describe {
+    my($dbobj, $expar, $nosynonym) = @_;
+    ::debugmsg(3, sprintf("line %d describe called input='%s'", __LINE__, Dumper($dbobj)), @_);
+    # This describes a table, view, sequence, or synonym  by listing it's 
+    # columns and their attributes
+
+    # look in all_constraints for the object first.  This is because oracle
+    # stores information about primary keys in the all_objects table as "index"s
+    # but it doesn't have foreign keys or constraints.  So we want to match
+    # there here first
+
+    # now look in all_objects
+    my @ret= describe_lookup_object($dbobj, $nosynonym);
+    if (@ret && exists($ret[7]) && $ret[7] eq 'INVALID') {
+        ::wrn($dbobj->toStr(1)." is invalid");
+    }
+
+    unless(@ret) {
+      my $stmtParts= $dbobj->stmtParts_vn_table('constraints');
+      my $sqlstr= sprintf(
+          "select constraint_type, constraint_name from %s".
+          " where %s constraint_name = ?",
+          $stmtParts->{table}, $stmtParts->{where_owner});
+      my @bindvars= ();
+      if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
+      push(@bindvars, $dbobj->{name});
+      @ret = $::dbh->selectrow_array($sqlstr, undef, @bindvars);
+    }
+
+    if (not @ret) {
+      ::query_err('describe',
+        sprintf("Object '%s' not found", $dbobj->toStr()));
+      return;
+    }
+
+    if($ret[0] eq 'INDEX') {
+      # Check if this 'index' is really a primary key and is in the
+      # all_constraints table
+
+      my $stmtParts= $dbobj->stmtParts_vn_table('constraints');
+      my @temp_ret = $::dbh->selectrow_array(
+        sprintf(
+          "select constraint_type, constraint_name from %s".
+          " where %s constraint_name = ?",
+          $stmtParts->{table}, $stmtParts->{owner}),
+          undef, $dbobj->{name});
+
+        @ret = @temp_ret if @temp_ret;
+    }
+
+    if ($ret[0]) { $dbobj->{type}=  $ret[0]; }
+    if ($ret[1]) { $dbobj->{owner}= $ret[1]; }
+    if ($ret[2]) { $dbobj->{name}=  $ret[2]; }
+    ::debugmsg(1, sprintf("line %d type='%s' ret: [@ret]", __LINE__, $dbobj->{type}));
+
+    if($dbobj->{type} eq 'SYNONYM') {
+      # Find what this is a synonym to, then recursively call this function
+      # again to describe whatever it points to
+      my $stmtParts= $dbobj->stmtParts_vn_table('synonyms');
+      my $stmt= sprintf(
+        "select table_name, table_owner, db_link from %s".
+        " where %s synonym_name=?",
+        $stmtParts->{table}, $stmtParts->{where_owner});
+        my @bindvars= ();
+        if ($dbobj->{owner}) { push(@bindvars, $dbobj->{owner}); }
+        push(@bindvars, $dbobj->{name});
+
+        my($table_name, $table_owner, $syn_dblink) = $::dbh->selectrow_array(
+          $stmt, undef, @bindvars);
+#       if ($syn_dblink) {
+#          $syn_dblink= '@'.cut_first($syn_dblink, '.'); # "mydb_link.domain.name" ==> "mydb_link"
+#       }
+        my $target_dbobj= DbObjectData->new_oc($syn_dblink, $table_owner, $table_name);
+
+        if ($dbobj->{dblink} && $target_dbobj->{dblink}) {
+          printf (STDERR "%s is synonym to %s\n", $dbobj->toStr(), $target_dbobj->toStr());
+          ::query_err('describe', sprintf ("Too many database links ('%s', '%s')",
+            $dbobj->{dblink}, $target_dbobj->{dblink}));
+          return;
+        }
+        $target_dbobj->{dblink} = $target_dbobj->{dblink} . $dbobj->{dblink};
+        printf (STDERR "%s is synonym to %s\n", $dbobj->toStr(), $target_dbobj->toStr());
+        STDERR->flush();
+
+        ::debugmsg(4, sprintf("line %d recursion: desc_next='%s'", __LINE__, $target_dbobj->toStr()));
+        describe($target_dbobj, $expar, 1);
+
+    } elsif ($dbobj->{type} eq 'SEQUENCE') {
+      my $stmtParts = $dbobj->stmtParts_vn_table('sequences', 'sequence_owner');
+      my $sqlstr = sprintf(
+        "select sequence_name \"Name\",
+         min_value \"Min\",
+         max_value \"Max\",
+         increment_by \"Inc\",
+         cycle_flag \"Cycle\",
+         order_flag \"Order\",
+         last_number \"Last\"
+         from %s
+         where %s sequence_name=?",
+         $stmtParts->{table}, $stmtParts->{where_owner});
+      my @bindvars= ();
+      if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
+      push(@bindvars, $dbobj->{name});
+      ::query_expar($sqlstr, $expar, @bindvars);
+
+    } elsif($dbobj->{type} eq 'TABLE' || $dbobj->{type} eq 'VIEW' || $dbobj->{type} eq 'TABLE PARTITION') {
+      DescribeRuts::describe_table($dbobj, $expar);
+
+    } elsif($dbobj->{type} eq 'R') {
+        my $sqlstr = q{
+          select ac.constraint_name "Name", 
+                 decode(ac.constraint_type, 
+                   'R', 'Foreign Key',
+                   'C', 'Check',
+                   'U', 'Unique',
+                   'P', 'Primary Key',
+                   ac.constraint_type) "Type",
+                 ac.table_name "Table Name", 
+                 acc.column_name "Column Name", 
+                 r_ac.table_name "Parent Table", 
+                 r_acc.column_name "Parent Column",
+                 ac.delete_rule "Delete Rule"
+            from all_constraints ac, all_cons_columns acc,
+                 all_constraints r_ac, all_cons_columns r_acc
+           where ac.constraint_name = acc.constraint_name
+             and ac.owner = acc.owner
+             and ac.r_constraint_name = r_ac.constraint_name
+             and r_ac.constraint_name = r_acc.constraint_name
+             and r_ac.owner = r_acc.owner
+             and ac.constraint_type = 'R'
+             and ac.constraint_name = ?
+             and ac.owner = ?
+           order by ac.constraint_name, acc.position
+      };
+      my $expar_special= $expar->clone();
+      $expar_special->{format}= 'list_aligned';
+      ::query_expar($sqlstr, $expar_special, $dbobj->{name}, $dbobj->{shcema});
+
+    } elsif($dbobj->{type} eq 'P' || $dbobj->{type} eq 'U') {
+      my $sqlstr = q{
+          select ac.constraint_name "Name", 
+                 decode(ac.constraint_type, 
+                   'R', 'Foreign Key',
+                   'C', 'Check',
+                   'U', 'Unique',
+                   'P', 'Primary Key',
+                   ac.constraint_type) "Type",
+                 ac.table_name "Table Name", 
+                 acc.column_name "Column Name" 
+            from all_constraints ac, all_cons_columns acc
+           where ac.constraint_name = acc.constraint_name
+             and ac.owner = acc.owner
+             and ac.constraint_name = ?
+             and ac.owner = ?
+           order by ac.constraint_name, acc.position
+      };
+      ::query_expar($sqlstr, $expar, $dbobj->{name}, $dbobj->{owner});
+
+    } elsif($dbobj->{type} eq 'C') {
+      my $sqlstr = q{
+          select ac.constraint_name "Name", 
+                 decode(ac.constraint_type, 
+                   'R', 'Foreign Key',
+                   'C', 'Check',
+                   'U', 'Unique',
+                   'P', 'Primary Key',
+                   ac.constraint_type) "Type",
+                 ac.table_name "Table Name", 
+                 ac.search_condition "Search Condition"
+           from all_constraints ac
+           where ac.constraint_name = ?
+           order by ac.constraint_name
+      };
+      ::query_expar($sqlstr, $expar, $dbobj->{name});
+
+    } elsif($dbobj->{type} eq 'INDEX') {
+      my $sqlstr = q{
+        select ai.index_name "Index Name",
+               ai.index_type "Type",
+               ai.table_name "Table Name",
+               ai.uniqueness "Unique?",
+               aic.column_name "Column Name"
+        from all_indexes ai, all_ind_columns aic
+        where ai.index_name = aic.index_name(+)
+          and ai.table_owner = aic.table_owner(+)
+          and ai.index_name = ?
+          and ai.table_owner = ?
+        order by aic.column_position
+      };
+      ::query_expar($sqlstr, $expar, $dbobj->{name}, $dbobj->{owner});
+
+    } elsif($dbobj->{type} eq 'TRIGGER') {
+      my $stmtParts = $dbobj->smtmParts_vn_table('triggers');
+      my $sqlstr = sprintf(
+        "select trigger_name \"Trigger Name\",
+                trigger_type \"Type\",
+                triggering_event \"Event\",
+                table_name \"Table\",
+                when_clause \"When\",
+                description \"Description\",
+                trigger_body \"Body\"
+         from %s
+         where %s trigger_name=?",
+         $stmtParts->{table}, $stmtParts->{where_owner});
+      my @bindvars= ();
+      if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
+      push(@bindvars, $dbobj->{name});
+      my $expar_special= $expar->clone();
+      $expar_special->{format}= 'list_aligned';
+      ::query_expar($sqlstr, $expar_special, @bindvars);
+
+    } elsif($dbobj->{type} eq 'PACKAGE'   ||
+            $dbobj->{type} eq 'PROCEDURE' ||
+            $dbobj->{type} eq 'FUNCTION' ||
+            $dbobj->{type} eq 'CLUSTER') {
+      ::wrn(sprintf("Type %s is not supported (object %s)",
+        $dbobj->{type}, $dbobj->toStr(0)));
+
+    } elsif($dbobj->{type} eq 'DATABASE LINK') {
+#     ::debugmsg(0, sprintf('line %d dbobj=%s', __LINE__, $dbobj->toStr(1)));
+      my $stmtParts= $dbobj->stmtParts_vn_table('db_links', 'owner', 1);
+      my $sqlstr= sprintf(
+        "select %s, db_link \"Name\", username \"User\", host \"Host\"".
+        " from %s".
+        " where %s db_link=?",
+        $stmtParts->{select_owner}, $stmtParts->{table}, $stmtParts->{where_owner});
+      my @bindvars= ();
+      if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
+      push(@bindvars, $dbobj->{name});
+#     ::debugmsg(0, sprintf('line %d sqlstr=\'%s\' owner=\'%s\' name=\'%s\'', __LINE__, $sqlstr, $dbobj->{owner}, $dbobj->{name}));
+      ::query_expar($sqlstr, $expar, @bindvars);
+
     } else {
-      @ret= describe_lookup_object_1($schema. '.' .$object, '', $dblink, $nosynonym);
+      ::query_err('describe', sprintf("Object '%s' is not supported yet", $dbobj->toStr(1)));
     }
   }
-  if (not @ret) {
-    if ($ora_database_domain) {
-      my $fullname= ($schema ? $schema . '.' : '') . $object . $ora_database_domain;
-      @ret= describe_lookup_object_2($fullname, $dblink);
-    }
-  }
-
-  return @ret;
-}
-
-# the part before the first separator-character
-sub cut_first {
-    my ($str, $sep)= @_;
-
-    my $pos= index($str, $sep);
-    my $retval;
-    if ($pos == -1) { $retval= $str; }
-    else            { $retval= substr($str, 0, $pos); }
-    return $retval;
-}
-
-# the part that starts with the first separator-character
-sub but_first {
-    my ($str, $sep)= @_;
-
-    my $pos= index($str, $sep);
-    my $retval;
-    if ($pos == -1) { $retval= ''; }
-    else            { $retval= substr($str, $pos); }
-    return $retval;
 }
 
 sub describe {
@@ -2707,7 +3069,10 @@ sub describe {
   # This describes a table, view, sequence, or synonym  by listing it's 
   # columns and their attributes
 
+  my $expar= ExecutionParams->new($format, $num_rows, $op, $op_text);
+
   # convert to lowercase for comparison operations
+  # 20241126.LZS <FIXME> should be uppercase, unless "quotes"
   $input = lc($input);
 
   # make sure we're still connected to the database
@@ -2723,236 +3088,27 @@ sub describe {
     my $type;
     my @ret;
 
-    my $schema;
+    my $schema= '';
     my $dblink= '';
     if($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#.]+)\@([a-zA-Z0-9_\$\#]+)$/) {
       $schema = $1;
       $object = $2;
-      $dblink = "\@$3";
+      $dblink = $3;
     } elsif($object =~ /^([a-zA-Z0-9_\$\#]+)\@([a-zA-Z0-9_\$\#]+)$/) {
       $schema = '';
       $object = $1;
-      $dblink = "\@$2";
+      $dblink = $2;
     } elsif($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#]+)$/) {
       $schema = $1;
       $object = $2;
     } else {
       $schema = '';
     }
-
     debugmsg(1,sprintf("line %d schema: [$schema] object: [$object] dblink: [$dblink]", __LINE__));
-
-    # look in all_constraints for the object first.  This is because oracle
-    # stores information about primary keys in the all_objects table as "index"s
-    # but it doesn't have foreign keys or constraints.  So we want to match
-    # there here first
-
-    # now look in all_objects
-    @ret= describe_lookup_object($object,$schema,$dblink,$nosynonym);
-
-    unless(@ret) {
-      @ret = $dbh->selectrow_array(
-        "select constraint_type, constraint_name from all_constraints$dblink where "
-          ."constraint_name = ?",
-        undef, uc($object)
-      );
-    }
-
-    if (not @ret) {
-      query_err('describe', "Object '$object' (schema '$schema', dblink '$dblink') is not found");
-      return;
-    }
-
-    if($ret[0] eq 'INDEX') {
-      # Check if this 'index' is really a primary key and is in the
-      # all_constraints table
-
-      my @temp_ret = $dbh->selectrow_array(
-        "select constraint_type, constraint_name from all_constraints$dblink where "
-          ."constraint_name = ?",
-        undef, uc($object)
-      );
-
-      @ret = @temp_ret if @temp_ret;
-    }
-
-    $type = $ret[0];
-    my $object_owner = $ret[1];
-    my $object_name  = $ret[2];
-    debugmsg(1, sprintf("line %d type: [$type] ret: [@ret]", __LINE__));
-
-    if($type eq 'SYNONYM') {
-      # Find what this is a synonym to, then recursively call this function
-      # again to describe whatever it points to
-      my $stmt=
-        sprintf(
-          "select table_name, table_owner, db_link from %s".
-          " where %s synonym_name = ?",
-          describe_tablename('synonyms', $object_name, $dblink),
-          describe_owner_where($object_owner, $dblink));
-
-      my($table_name, $table_owner, $syn_dblink) = $dbh->selectrow_array(
-        $stmt, undef, $object_name);
-      if ($syn_dblink) {
-        $syn_dblink= '@'.cut_first($syn_dblink, '.'); # "mydb_link.domain.name" ==> "mydb_link"
-      }
-      debugmsg(4,
-        sprintf(
-          "line %d stmt='%s' synonym_name='%s' owner='%s'\n".
-          "table_name='%s' table_owner='%s' dblink='%s'",
-          __LINE__, $stmt, uc($ret[2]), uc($ret[1]),
-          $table_name.$dblink, $table_owner, $syn_dblink));
-
-      printf (STDERR "%s%s%s%s is synonym to %s%s%s%s%s\n",
-        uc($schema), ($schema ? '.' : ''), $object_name, uc($dblink),
-        $table_owner, ($table_owner ? '.' : ''), $table_name, $syn_dblink, uc($dblink));
-      if ($dblink && $syn_dblink) {
-        query_err('describe', sprintf ("Too many database links ('%s', '%s')", $dblink, $syn_dblink));
-        return;
-      }
-      print STDERR "\n";
-      STDERR->flush();
-
-      my $forward_dblink= $syn_dblink . $dblink;
-      my $desc_next= sprintf ('desc %s%s'.'%s'.'%s%s',
-          $table_owner, ($table_owner? '.': ''),
-          $table_name,
-          $forward_dblink);
-
-      debugmsg(4, sprintf("line %d recursion: desc_next='%s'", __LINE__, $desc_next));
-      describe($desc_next, $format, 1);
-    } elsif($type eq 'SEQUENCE') {
-      my $sqlstr = "
-        select sequence_name \"Name\",
-          min_value \"Min\",
-          max_value \"Max\",
-          increment_by \"Inc\",
-          cycle_flag \"Cycle\",
-          order_flag \"Order\",
-          last_number \"Last\"
-        from all_sequences$dblink
-        where sequence_name = ?
-          and sequence_owner = ?";
-      query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
-                               op_text => $op_text}, uc($ret[2]), uc($ret[1]));
-
-    } elsif($type eq 'TABLE' || $type eq 'VIEW' || $type eq 'TABLE PARTITION') {
-      describe_table($format, $num_rows, $op, $op_text, $ret[2], $ret[1], $dblink);
-
-    } elsif($type eq 'R') {
-      my $sqlstr = q{
-        select ac.constraint_name "Name", 
-               decode(ac.constraint_type, 
-                 'R', 'Foreign Key',
-                 'C', 'Check',
-                 'U', 'Unique',
-                 'P', 'Primary Key',
-                 ac.constraint_type) "Type",
-               ac.table_name "Table Name", 
-               acc.column_name "Column Name", 
-               r_ac.table_name "Parent Table", 
-               r_acc.column_name "Parent Column",
-               ac.delete_rule "Delete Rule"
-          from all_constraints ac, all_cons_columns acc,
-               all_constraints r_ac, all_cons_columns r_acc
-         where ac.constraint_name = acc.constraint_name
-           and ac.owner = acc.owner
-           and ac.r_constraint_name = r_ac.constraint_name
-           and r_ac.constraint_name = r_acc.constraint_name
-           and r_ac.owner = r_acc.owner
-           and ac.constraint_type = 'R'
-           and ac.constraint_name = ?
-           and ac.owner = ?
-         order by ac.constraint_name, acc.position
-      };
-      query($sqlstr, 'list_aligned', {num_rows => $num_rows, op => $op, 
-                                      op_text => $op_text}, uc($ret[1]),
-                                      uc($schema));
-    } elsif($type eq 'P' || $type eq 'U') {
-      my $sqlstr = q{
-        select ac.constraint_name "Name", 
-               decode(ac.constraint_type, 
-                 'R', 'Foreign Key',
-                 'C', 'Check',
-                 'U', 'Unique',
-                 'P', 'Primary Key',
-                 ac.constraint_type) "Type",
-               ac.table_name "Table Name", 
-               acc.column_name "Column Name" 
-          from all_constraints ac, all_cons_columns acc
-         where ac.constraint_name = acc.constraint_name
-           and ac.owner = acc.owner
-           and ac.constraint_name = ?
-           and ac.owner = ?
-         order by ac.constraint_name, acc.position
-      };
-      query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
-                               op_text => $op_text}, uc($ret[1]), uc($schema));
-    } elsif($type eq 'C') {
-      my $sqlstr = q{
-        select ac.constraint_name "Name", 
-               decode(ac.constraint_type, 
-                 'R', 'Foreign Key',
-                 'C', 'Check',
-                 'U', 'Unique',
-                 'P', 'Primary Key',
-                 ac.constraint_type) "Type",
-               ac.table_name "Table Name", 
-               ac.search_condition "Search Condition"
-          from all_constraints ac
-         where ac.constraint_name = ?
-         order by ac.constraint_name
-      };
-      query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
-                               op_text => $op_text}, uc($ret[1]));
-    } elsif($type eq 'INDEX') {
-      my $sqlstr = q{
-        select ai.index_name "Index Name",
-               ai.index_type "Type",
-               ai.table_name "Table Name",
-               ai.uniqueness "Unique?",
-               aic.column_name "Column Name"
-          from all_indexes ai, all_ind_columns aic
-         where ai.index_name = aic.index_name(+)
-           and ai.table_owner = aic.table_owner(+)
-           and ai.index_name = ?
-           and ai.table_owner = ?
-         order by aic.column_position
-      };
-      query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
-                               op_text => $op_text}, uc($ret[2]), uc($schema));
-    } elsif($type eq 'TRIGGER') {
-      my $sqlstr = q{
-        select trigger_name "Trigger Name",
-               trigger_type "Type",
-               triggering_event "Event",
-               table_name "Table",
-               when_clause "When",
-               description "Description",
-               trigger_body "Body"
-          from all_triggers
-         where trigger_name = ?
-      };
-      query($sqlstr, 'list_aligned', {num_rows => $num_rows, op => $op, 
-                                      op_text => $op_text}, uc($ret[2]));
-    } elsif($type eq 'PACKAGE') {
-      wrn("Not implemented (yet)");
-    } elsif($type eq 'PROCEDURE') {
-      wrn("Not implemented (yet)");
-    } elsif($type eq 'CLUSTER') {
-      wrn("Not implemented (yet)");
-    } elsif($type eq 'TRIGGER') {
-      wrn("Not implemented (yet)");
-    } elsif($type eq 'DATABASE LINK') {
-      my $sqlstr=
-        "select owner \"Owner\", db_link \"Name\", username \"User\", host \"Host\"".
-        " from all_db_links${dblink}".
-        " where owner=? and db_link=?";
-      query($sqlstr, $format, {num_rows => $num_rows, op => $op,
-                               op_text => $op_text}, uc($ret[1]), uc($ret[2]));
-    } else {
-      query_err('describe', "Object '$object' schema '$schema' of type '$type' is not supported yet");
-    }
+    my $dbobj= DbObjectData->new_uc($dblink, $schema, $object, '');
+    DescribeRuts::describe($dbobj, $expar, $nosynonym);
+  } else {
+    query_err('describe', "Couldn't parse the argument of 'describe'");
   }
 }
 
@@ -2975,7 +3131,12 @@ sub set_cmd {
     }
   }
 }
-    
+
+sub query_expar {
+  my($sqlstr, $expar, @bind_vars) = @_;
+  return query($sqlstr, $expar->{format}, $expar, @bind_vars);
+}
+
 sub query {
   my($sqlstr, $format, $opts, @bind_vars) = @_;
   debugmsg(3, "query called", @_);
@@ -3383,13 +3544,12 @@ sub format_output_sql {
 }
 
 package StringParts {
-  use fields qw (orig parts nparts maxlen ralign);
+  use fields qw (parts nparts maxlen ralign);
 
   sub fromStr {
     my $class= shift;
-    my ($orig)= @_;
+    my $orig= @_;
     my StringParts $self= {};
-    $self->{orig}= $orig;
     $self->{ralign}= 0;
 
     my @parts= split("\n", $orig, -1);
@@ -3397,8 +3557,8 @@ package StringParts {
     $self->{nparts}= scalar(@parts);
 
     my $nmax= 0;
-    for (my $i= 0; $i<scalar(@parts); ++$i) {
-      my $n= length($parts[$i]);
+    for my $p (@parts) {
+      my $n= length($p);
       if ($n>$nmax) { $nmax= $n; }
     }
     $self->{maxlen}= $nmax;
@@ -3416,6 +3576,64 @@ package StringParts {
     my $self= fromStr($class, ''.$num);
     $self->{ralign}= 1;
     return $self;
+  }
+}
+
+package StringList {
+  use fields qw(strings maxparts);
+
+  sub new {
+    my $class= shift;
+    my $self= {};
+    $self->{strings}= []; # array of StringParts
+    $self->{maxparts}= 0;
+    return bless($self, $class);
+  }
+
+  sub add {
+    my ($self, $sp) = @_;
+    push(@{$self->{strings}}, $sp);
+    if ($sp->{nparts} > $self->{maxparts}) { $self->{maxparts} = $sp->{nparts}; }
+  }
+}
+
+package ListData {
+  use fields qw(fldmaxwidths fldaligns stored);
+
+  sub new {
+    my $class= $_[0];
+    my $self= {};
+    $self->{fldmaxwidths}= [];
+    $self->{fldaligns}= [];
+    $self->{stored}= [];          # array of StringList
+    return bless($self, $class);
+  }
+
+  sub addField {
+    my ($self, $fldname, $align)= @_;
+    my $n= length($fldname);
+    push(@{$self->{fldmaxwidths}}, length($fldname));
+    push(@{$self->{fldaligns}}, $align);
+  }
+
+  sub storeFieldWidth {
+    my ($self, $fldindex, $width)= @_;
+    if ($width > $self->{fldmaxwidths}[$fldindex]) {
+        $self->{fldmaxwidths}[$fldindex]= $width;
+    }
+  }
+
+  sub storeStringList {
+    my ($self, $slist)= @_;
+    push(@{$self->{stored}}, $slist);
+    my $strlist= $slist->{strings};
+
+    for my $i (0 .. $#{$strlist}) {
+      my $width= $strlist->[$i]->{maxlen};
+      if ($width > $self->{fldmaxwidths}[$i]) {
+        $self->{fldmaxwidths}[$i]= $width;
+      }
+    }
   }
 }
 
