@@ -2,6 +2,7 @@ undated
   * 'prompt' command (see test/test0015.sh)
   * standalone comments are now skipped (see test/test0016.sh)
   * no padding for the last field of the record
+  * rewrite in describe (using packages)
   * Version number 1.83-0009
 
 2024.10.28. lzs
