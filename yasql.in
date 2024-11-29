@@ -2562,6 +2562,8 @@ package DbObjectData {
     $self->{owner}= $_[2];
     $self->{name}= $_[3];
     $self->{type}= '';
+    if (exists($_[4])) { $self->{type}= $_[4]; }
+    else               { $self->{type}= '';    }
     return bless($self, $classname);
   }
 
@@ -2572,7 +2574,8 @@ package DbObjectData {
     $self->{dblink}= uc($_[1]);
     $self->{owner}= uc($_[2]);
     $self->{name}= uc($_[3]);
-    $self->{type}= '';
+    if (exists($_[4])) { $self->{type}= uc($_[4]); }
+    else               { $self->{type}= '';    }
     return bless($self, $classname);
   }
 
@@ -2719,12 +2722,14 @@ package DescribeRuts {
   # depending on parameter '$schema' being filled,
   # 'describe_lookup_object_1' reads from 'user_objects' or 'all_objects'
   # $fsynonym: 0/1/2 = any / not synonym / synonym
+  # buf if $dbobj->{type} is set, $fsynonym doesn't matter
   sub describe_lookup_object_1 {
     my ($dbobj, $fsynonym) = @_;
     my $stmtParts= $dbobj->stmtParts_vn_table('objects');
-    my $where_synonym= '';
-    if    ($fsynonym==1) { $where_synonym= 'and object_type != \'SYNONYM\''; }
-    elsif ($fsynonym==2) { $where_synonym= 'and object_type =  \'SYNONYM\''; }
+    my $where_type= '';
+    if    ($dbobj->{type}) { $where_type= 'and object_type=\''.$dbobj->{type}.'\''; }
+    if    ($fsynonym==1)   { $where_type= 'and object_type != \'SYNONYM\''; }
+    elsif ($fsynonym==2)   { $where_type= 'and object_type =  \'SYNONYM\''; }
     my $sqlstr = sprintf(
        "select object_type, %s, object_name, object_id, created".
        ", last_ddl_time, timestamp, status".
@@ -2732,7 +2737,7 @@ package DescribeRuts {
        $stmtParts->{select_owner},
        $stmtParts->{table},
        $stmtParts->{where_owner},
-       $where_synonym);
+       $where_type);
     my @bindvars= ();
     if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
     push(@bindvars, $dbobj->{name});
@@ -2858,7 +2863,7 @@ package DescribeRuts {
 
     if (not @ret) {
       ::query_err('describe',
-        sprintf("Object '%s' not found", $dbobj->toStr()));
+        sprintf("Object '%s' not found", $dbobj->toStr(1)));
       return;
     }
 
@@ -3087,11 +3092,17 @@ sub describe {
   if($input =~ /^\s*desc\w*\s*([a-zA-Z0-9_\$\#\.\@]+)/) {
     my $object = $1;
     my $sqlstr;
-    my $type;
-    my @ret;
-
+    my $type= '';
     my $schema= '';
     my $dblink= '';
+    my @ret;
+
+    if (length($object)>1 && substr($object,0,1) eq '@') {
+#     debugmsg(0, sprintf('%d cut: \'%s\'=>\'%s\'', __LINE__, $object, substr($object, 1)));
+      $object= substr($object, 1);
+      $type= 'DATABASE LINK';
+    }
+
     if($object =~ /^([a-zA-Z0-9_\$\#]+)\.([a-zA-Z0-9_\$\#.]+)\@([a-zA-Z0-9_\$\#\.]+)$/) {
       $schema = $1;
       $object = $2;
@@ -3106,8 +3117,13 @@ sub describe {
     } else {
       $schema = '';
     }
+    if ($type eq 'DATABASE LINK' && $schema ne '' ) {
+          $object= $schema. '.' .$object;
+          $schema= '';
+    }
+
     debugmsg(1,sprintf("line %d schema: [$schema] object: [$object] dblink: [$dblink]", __LINE__));
-    my $dbobj= DbObjectData->new_uc($dblink, $schema, $object, '');
+    my $dbobj= DbObjectData->new_uc($dblink, $schema, $object, $type);
     DescribeRuts::describe($dbobj, $expar, $nosynonym);
   } else {
     query_err('describe', "Couldn't parse the argument of 'describe'");
