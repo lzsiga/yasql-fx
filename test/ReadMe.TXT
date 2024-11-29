@@ -31,3 +31,4 @@ list of tests:
   test0014.sh - testing describe over database link
   test0015.sh - testing 'prompt' (write literal to stdout)
   test0016.sh - handing standalone comment (single or multiline)
+  test0017.sh - testing multiline fields
