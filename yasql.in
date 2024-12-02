@@ -2872,14 +2872,15 @@ package DescribeRuts {
       # all_constraints table
 
       my $stmtParts= $dbobj->stmtParts_vn_table('constraints');
-      my @temp_ret = $::dbh->selectrow_array(
-        sprintf(
+      my $sqlstr= sprintf(
           "select constraint_type, constraint_name from %s".
-          " where %s constraint_name = ?",
-          $stmtParts->{table}, $stmtParts->{owner}),
-          undef, $dbobj->{name});
-
-        @ret = @temp_ret if @temp_ret;
+          " where %s constraint_name=?",
+          $stmtParts->{table}, $stmtParts->{where_owner});
+      my @bindvars= ();
+      if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
+      push(@bindvars, $dbobj->{name});
+      my @temp_ret = $::dbh->selectrow_array($sqlstr, undef, @bindvars);
+      @ret = @temp_ret if @temp_ret;
     }
 
     if ($ret[0]) { $dbobj->{type}=  $ret[0]; }
@@ -3008,20 +3009,24 @@ package DescribeRuts {
       ::query_expar($sqlstr, $expar, $dbobj->{name});
 
     } elsif($dbobj->{type} eq 'INDEX') {
-      my $sqlstr = q{
+      my $spartsInd= $dbobj->stmtParts_vn_table('indexes');
+      my $spartsICol= $dbobj->stmtParts_vn_table('ind_columns');
+      my $sqlstr = sprintf (q{
         select ai.index_name "Index Name",
                ai.index_type "Type",
                ai.table_name "Table Name",
                ai.uniqueness "Unique?",
                aic.column_name "Column Name"
-        from all_indexes ai, all_ind_columns aic
-        where ai.index_name = aic.index_name(+)
-          and ai.table_owner = aic.table_owner(+)
-          and ai.index_name = ?
-          and ai.table_owner = ?
-        order by aic.column_position
-      };
-      ::query_expar($sqlstr, $expar, $dbobj->{name}, $dbobj->{owner});
+        from %s ai, %s aic
+        where ai.index_name = aic.index_name(+) and
+          %s ai.index_name=?
+        order by aic.column_position},
+        $spartsInd->{table}, $spartsICol->{table},
+        $spartsInd->{where_owner});
+      my @bindvars= ();
+      if ($dbobj->{owner}) { push(@bindvars, $dbobj->{owner}); }
+      push(@bindvars, $dbobj->{name});
+      ::query_expar($sqlstr, $expar, @bindvars);
 
     } elsif($dbobj->{type} eq 'TRIGGER') {
       my $stmtParts = $dbobj->smtmParts_vn_table('triggers');
