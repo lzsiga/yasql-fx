@@ -2099,7 +2099,7 @@ sub show {
                                op_text => $op_text}, uc($2), uc($dbuser));
       $dbh->{LongReadLen} = $prev_LongReadLen;
     } else {
-      query_err("show", "Unsupported show type", $input);
+      query_err("show", "Unsupported show type ".$1, $input);
     }
   } elsif($input =~ /^\s*show\s+all\s+([a-zA-Z0-9_\$\#\s]+)\s*$/) {
     if($1 eq 'tables') {
@@ -2250,7 +2250,7 @@ sub show {
       query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
                                op_text => $op_text});
     } else {
-      query_err("show", "Unsupported show type", $input);
+      query_err("show", "Unsupported show type ".$1, $input);
     }
   } elsif($input =~ /^\s*show\s+([a-zA-Z0-9_\$\#\s]+)\s*$/) {
     if($1 eq 'tables') {
@@ -2500,10 +2500,10 @@ sub show {
                                op_text => $op_text});
 
     } else {
-      query_err("show", "Unsupported show type", $input);
+      query_err("show", "Unsupported show type ".$1, $input);
     }
   } else {
-    query_err("show", "Unsupported show type", $input);
+    query_err("show", "Unsupported show type ".$1, $input);
   }
 }
 
