@@ -1034,6 +1034,8 @@ sub db_connect {
     print STDERR "auto_commit is " . ($conf{auto_commit} ? "ON" : "OFF")
         . ", commit_on_exit is " . ($conf{commit_on_exit} ? "ON" : "OFF")
         . "\n" unless $opt_batch;
+    STDERR->flush();
+
   } elsif( ($dberr eq '1017' || $dberr eq '1005') 
       && ++$num_connects < $conf{max_connection_attempts}) {
     $dberrstr =~ s/ \(DBD ERROR: OCISessionBegin\).*//;
@@ -4060,6 +4062,7 @@ sub query_err {
   print STDERR "$msg\n";
   print STDERR "Query: $query\n" if $query && $conf{sql_query_in_error};
   print STDERR "\n";
+  STDERR->flush();
 }
 
 sub err {
