@@ -2865,7 +2865,7 @@ package DescribeRuts {
 
     if (not @ret) {
       ::query_err('describe',
-        sprintf("Object '%s' not found", $dbobj->toStr(1)));
+        sprintf("Object '%s' is not found.", $dbobj->toStr(1)));
       return;
     }
 
