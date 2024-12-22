@@ -4,6 +4,7 @@ undated
   * no padding for the last field of the record
   * rewrite in describe (using packages)
   * syntax addition in describe: 'describe @dblink'
+  * Use 'Encode::_utf8_on' on '$DBI::errstr'
   * Version number 1.83-0009
 
 2024.10.28. lzs
