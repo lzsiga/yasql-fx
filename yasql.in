@@ -1166,7 +1166,7 @@ sub interface {
   if(-t STDIN) {
     while(defined($input = $term->readline($prompt))) {
       my $input_orig= $input; # 'input_orig' goes to the history
-      if (!Encode::is_utf8($input) && $lc_ctype_charset ne '') {
+      if (!is_utf8($input) && $lc_ctype_charset ne '') {
         $input= Encode::decode($lc_ctype_charset, $input);
       }
       $sigintcaught = 0;
@@ -2667,7 +2667,6 @@ package ExecutionParams {
 }
 
 package DescribeRuts {
-  use Data::Dumper;
 
   # describe_table: static method
   sub describe_table {
@@ -3200,10 +3199,11 @@ sub query {
     # send the query on to the database 
     push(@totalbench, get_bench()) if !$conf{extended_benchmarks};
     push(@querybench, get_bench()) if $conf{extended_benchmarks};
-    debugmsg(3, sprintf("preparing [%s] is_utf8=%d", $sqlstr, Encode::is_utf8($sqlstr)));
+    debugmsg(3, sprintf("line %d preparing [%s] is_utf8=%d", __LINE__, $sqlstr, is_utf8($sqlstr)));
     my $sth = $dbh->prepare($sqlstr);
     unless($sth) {
       my $err = $DBI::errstr;
+      debugmsg(3, sprintf("line %d DBI::errstr='%s' is_utf8=%d", __LINE__, $err, is_utf8($err)));
       $err =~ s/ \(DBD ERROR\: OCIStmtExecute\/Describe\)//;
 
       if ($err =~ m/DBD ERROR\:/) {
@@ -3221,11 +3221,13 @@ sub query {
 
       # Output message if serveroutput is on
       if($set{serveroutput}) {
-        debugmsg(3, "Calling dmbs_output_get");
+        debugmsg(3, sprintf("line %d Calling dmbs_output_get", __LINE__));
         my @output = $dbh->func( 'dbms_output_get' );
         print join("\n", @output) . "\n";
       }
-      query_err('prepare', $err, $sqlstr), setup_sigs(), return();
+      query_err(sprintf('line %d prepare', __LINE__), $err, $sqlstr);
+      setup_sigs();
+      return();
     }
     debugmsg(2, "sth: [$sth]");
 
@@ -4050,7 +4052,7 @@ sub ping {
 
 sub query_err {
   my($query_type, $msg, $query) = @_;
-  debugmsg(3, "query_err called", @_);
+  debugmsg(3, sprintf("line %d query_err called", __LINE__), @_);
   # outputs a standard query error.  does not exit
   # input: $query_type, $msg, $query
 
