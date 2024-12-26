@@ -3163,7 +3163,7 @@ sub query_expar {
 
 sub query {
   my($sqlstr, $format, $opts, @bind_vars) = @_;
-  debugmsg(3, "query called", @_);
+  debugmsg(3, sprintf("line %d query called sql='%s' is_utf8=%d", __LINE__, $sqlstr, is_utf8($sqlstr)), @_);
   # this runs the provided query and calls format_display to display the results
 
   my $num_rows      = $opts->{num_rows};
@@ -3203,7 +3203,6 @@ sub query {
     my $sth = $dbh->prepare($sqlstr);
     unless($sth) {
       my $err = $DBI::errstr;
-      _utf8_on($err);
       debugmsg(3, sprintf("line %d DBI::errstr='%s' is_utf8=%d", __LINE__, $err, is_utf8($err)));
       $err =~ s/ \(DBD ERROR\: OCIStmtExecute\/Describe\)//;
 
