@@ -60,6 +60,7 @@ use vars qw(
   $sysconf $sysconfdir $quitting $sigintcaught %conf %prompt $prompt_length
   @sqlpath %set $opt_batch $opt_notbatch $opt_headers
   $lc_ctype_charset $lc_ctype_encoding $ora_database_name $ora_database_domain
+  $srv_charset
 );
 
 $opt_debug= 0;
@@ -998,10 +999,16 @@ sub db_connect {
     my @ora_inf = $dbhandle->selectrow_array(
       "select ora_database_name, user, uid,
        sys_context('USERENV', 'SID') sid, sys_context('USERENV', 'SESSIONID') sessionid,
-       sys_context('USERENV', 'SERVER_HOST') srvhost, sys_context('USERENV', 'SERVICE_NAME') srvname
+       sys_context('USERENV', 'SERVER_HOST') srvhost, sys_context('USERENV', 'SERVICE_NAME') srvname,
+       (select value nls_characterset from nls_database_parameters where parameter='NLS_CHARACTERSET'),
+       (select value nls_nchar_characterset from nls_database_parameters where parameter='NLS_NCHAR_CHARACTERSET')
        from sys.dual");
     if (@ora_inf) {
       $ora_database_name= $ora_inf[0];
+      $srv_charset= $ora_inf[7];
+    } else {
+      $ora_database_name= 'unknown';
+      $srv_charset= 'unknown';
     }
     if ($ora_database_name) {
       $ora_database_netto=  cut_first($ora_database_name, '.');
@@ -1016,13 +1023,17 @@ sub db_connect {
       }
       if ($ora_database_name) {
         my ($unused, $ora_user, $ora_uid, $ora_sid, $ora_sessionid,
-          $ora_shost, $ora_sname)= @ora_inf;
-        printf("Database=%s%s, Server=%s@%s, User=%s, Uid=%s, Sid=%s, Sessionid=%s\n",
+          $ora_shost, $ora_sname, $unused2, $srv_nchar)= @ora_inf;
+        printf("Database: %s%s, Server: %s@%s, User: %s, Uid: %s, Sid: %s, Sessionid: %s\n",
           $ora_database_netto, $ora_database_domain,
           $ora_sname, $ora_shost,
           $ora_user, $ora_uid, $ora_sid, $ora_sessionid);
+        printf("LC_CTYPE: %s, Client charsets: AL32UTF8/AL32UTF8, Server charsets: %s/%s\n",
+          $lc_ctype_charset,
+          $srv_charset, $srv_nchar);
       }
-      print "\n"
+      print "\n";
+      STDOUT->flush();
     }
 
     if($banner =~ / (\d+)\.(\d+)\.([\d\.]+)/) {
