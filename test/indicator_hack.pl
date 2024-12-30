@@ -6,17 +6,27 @@ use utf8;
 use open qw(:std :encoding(UTF-8));
 use Encode qw(decode is_utf8);
 
+sub is_ascii {
+    my $s= $_[0];
+
+    my $regex= '^[\\p{ASCII}]*$';
+    return $s =~ /$regex/;
+}
+
 sub error_indicator_hack {
     my $errmsg= $_[0];
     my $srv_charset= $_[1];
 
     $errmsg =~ /^(.*)(at\ char\ )(\d+)( in \')(.*)\'\)$/;
+    if (!defined($5)) {
+        return (0, $errmsg);
+    }
     my $start= $1;
     my $indicator_offset= $3;
     my $rest = $5;
     my $pos= index($rest, '<*>');
 
-    if ($srv_charset eq 'AL32UTF8') {
+    if (is_ascii($rest) || $srv_charset eq 'AL32UTF8') {
 #       printf('Server is utf8: offset to be corrected, indicator is on the right place'."\n");
         $indicator_offset= $pos;
     } else {
@@ -53,6 +63,11 @@ my $testuni1=
     " (DBD ERROR: error possibly near <*> indicator at char 46".
     " in 'select 'árvíztűrő tükörfúrógép' from <*>duale')";
 
+my $testuni2=
+   "ORA-00942: table or view does not exist".
+   " (DBD ERROR: error possibly near <*> indicator at char 36".
+   " in 'select 'arvizturo tukorfuroge' from <*>duale')";
+
 my $test8bit1; # special case: the <*> indicator is inserted inside an UTF8 sequence
 { no utf8;
   $test8bit1=
@@ -66,6 +81,14 @@ my $test8bit2=
    " (DBD ERROR: error possibly near <*> indicator at char 36".
    " in 'select 'árvíztűrő tükörfúróg<*>é' from duale')";
 
+my $test8bit3=
+   "ORA-00942: table or view does not exist".
+   " (DBD ERROR: error possibly near <*> indicator at char 36".
+   " in 'select 'arvizturo tukorfuroge' from <*>duale')";
+
 Test1('testuni1',  $testuni1,  'AL32UTF8');
+Test1('testuni2',  $testuni2,  'AL32UTF8');
 Test1('test8bit1', $test8bit1, 'EE8ISO8859P2');
 Test1('test8bit2', $test8bit2, 'EE8ISO8859P2');
+Test1('test8bit3', $test8bit3, 'EE8ISO8859P2');
+Test1('inperr1', 'inperr1', 'EE8ISO8859P2');
