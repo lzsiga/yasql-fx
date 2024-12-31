@@ -3167,6 +3167,47 @@ sub set_cmd {
   }
 }
 
+sub is_ascii {
+    my $s= $_[0];
+
+    my $regex= '^[\\p{ASCII}]*$';
+    return $s =~ /$regex/;
+}
+
+sub error_indicator_hack {
+    my $errmsg= $_[0];
+    my $srv_charset= $_[1];
+
+    $errmsg =~ /^(.*)(at\ char\ )(\d+)( in \')(.*)\'\)$/;
+    if (!defined($5)) {
+        return (0, $errmsg);
+    }
+    my $start= $1;
+    my $indicator_offset= $3;
+    my $rest = $5;
+    my $pos= index($rest, '<*>');
+
+    if (is_ascii($rest) || $srv_charset eq 'AL32UTF8') {
+#       printf('Server is utf8: offset to be corrected, indicator is on the right place'."\n");
+        $indicator_offset= $pos;
+    } else {
+#       printf('Server is singlebyte: offset is correct [chars], indicator to be moved'."\n");
+        my $pos= index($rest, '<*>');
+        if ($pos >= 0) {
+            substr($rest, $pos, 3, '');
+            if (!is_utf8($rest)) {
+                my $tmp= decode('UTF-8', $rest, Encode::FB_DEFAULT);
+                if ($tmp && is_utf8($tmp)) {
+                    $rest= $tmp;
+                }
+            }
+            substr($rest, $indicator_offset, 0, '<*>');
+        }
+        printf('Modified: %s'."\n", $rest);
+    }
+    return ($indicator_offset, $start.'at char '.$indicator_offset." in '".$rest."')");
+}
+
 sub query_expar {
   my($sqlstr, $expar, @bind_vars) = @_;
   return query($sqlstr, $expar->{format}, $expar, @bind_vars);
@@ -3214,19 +3255,14 @@ sub query {
     my $sth = $dbh->prepare($sqlstr);
     unless($sth) {
       my $err = $DBI::errstr;
+      my ($indicator_offset, $hacked_err) = (0, $err);
       debugmsg(3, sprintf("line %d DBI::errstr='%s' is_utf8=%d", __LINE__, $err, is_utf8($err)));
       $err =~ s/ \(DBD ERROR\: OCIStmtExecute\/Describe\)//;
 
       if ($err =~ m/DBD ERROR\:/) {
-	my $indicator_offset = $DBI::errstr;
-	$indicator_offset =~ s/(.*)(at\ char\ )(\d+)(\ .*)/$3/;
-	if ($indicator_offset > 0) {
-    	    my $i = 0;
-    	    print $sqlstr, "\n";
-	    for ($i=0;$i<$indicator_offset;++$i) {
-		print " ";
-	    }
-	    print "*\n";
+        ($indicator_offset, $hacked_err) = error_indicator_hack($err, $srv_charset);
+        if ($indicator_offset > 0) {
+            printf("%s\n%*s\n", $sqlstr, $indicator_offset+1, '*');
         }
       }
 
@@ -3236,7 +3272,7 @@ sub query {
         my @output = $dbh->func( 'dbms_output_get' );
         print join("\n", @output) . "\n";
       }
-      query_err(sprintf('line %d prepare', __LINE__), $err, $sqlstr);
+      query_err('prepare', $hacked_err, $sqlstr);
       setup_sigs();
       return();
     }
