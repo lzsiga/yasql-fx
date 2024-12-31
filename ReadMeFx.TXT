@@ -1,10 +1,10 @@
-undated
+2024.12.31. lzs
   * 'prompt' command (see test/test0015.sh)
   * standalone comments are now skipped (see test/test0016.sh)
   * no padding for the last field of the record
   * rewrite in describe (using packages)
   * syntax addition in describe: 'describe @dblink'
-  * Use 'Encode::_utf8_on' on '$DBI::errstr'
+  * in some cases the <*> error-indicator has to repositioned (see test0018.sh)
   * Version number 1.83-0009
 
 2024.10.28. lzs
