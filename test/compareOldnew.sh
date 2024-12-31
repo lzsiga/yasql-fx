@@ -35,6 +35,7 @@ DoOne () {
         printf "log-files '%s' and '%s' are equals\n" "$OldLog" "$NewLog"
     else
         printf "log-files '%s' and '%s' differ\n" "$OldLog" "$NewLog"
+        printf "LC_ALL=C diff -u -- '%s' '%s'\n" "$OldLog" "$NewLog"
     fi
 }
 
