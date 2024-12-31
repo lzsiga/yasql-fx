@@ -13,6 +13,11 @@ using script compareOldnew.sh:
 
     $ diff -u 'test0015.old.log' 'test0015.new.log'
 
+note:
+
+  yasql-fx (the new version) doesn't use charsets from environment variables
+  NLS_LANG and NLS_NCHAR, it goes with AL32UTF8
+
 list of tests:
 
   test0001.sh - demonstrates a problem that has been solved in version 1.83-1
@@ -32,3 +37,4 @@ list of tests:
   test0015.sh - testing 'prompt' (write literal to stdout)
   test0016.sh - handing standalone comment (single or multiline)
   test0017.sh - testing multiline fields
+  test0018.sh - error-indicator-placement
