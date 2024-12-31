@@ -3203,7 +3203,7 @@ sub error_indicator_hack {
             }
             substr($rest, $indicator_offset, 0, '<*>');
         }
-        printf('Modified: %s'."\n", $rest);
+#       printf('Modified: %s'."\n", $rest);
     }
     return ($indicator_offset, $start.'at char '.$indicator_offset." in '".$rest."')");
 }
