@@ -3178,8 +3178,7 @@ sub error_indicator_hack {
     my $errmsg= $_[0];
     my $srv_charset= $_[1];
 
-    $errmsg =~ /^(.*)(at\ char\ )(\d+)( in \')(.*)\'\)$/;
-    if (!defined($5)) {
+    if ($errmsg !~ m/^(.*)(at\ char\ )(\d+)( in \')(.*)\'\)$/s) {
         return (0, $errmsg);
     }
     my $start= $1;
@@ -3256,12 +3255,13 @@ sub query {
     unless($sth) {
       my $err = $DBI::errstr;
       my ($indicator_offset, $hacked_err) = (0, $err);
-      debugmsg(3, sprintf("line %d DBI::errstr='%s' is_utf8=%d", __LINE__, $err, is_utf8($err)));
+      debugmsg(3, sprintf("line %d DBI::errstr='%s' is_utf8=%d",
+        __LINE__, $err, is_utf8($err)));
       $err =~ s/ \(DBD ERROR\: OCIStmtExecute\/Describe\)//;
 
       if ($err =~ m/DBD ERROR\:/) {
         ($indicator_offset, $hacked_err) = error_indicator_hack($err, $srv_charset);
-        if ($indicator_offset > 0) {
+        if ($indicator_offset > 0 && index($sqlstr,"\n")== -1) { # <FIXME> Multiline
             printf("%s\n%*s\n", $sqlstr, $indicator_offset+1, '*');
         }
       }

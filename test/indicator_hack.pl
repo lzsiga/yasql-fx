@@ -93,10 +93,19 @@ my $test8bit3=
    " (DBD ERROR: error possibly near <*> indicator at char 36".
    " in 'select 'arvizturo tukorfuroge' from <*>duale')";
 
+my $test8bit4; # special case: the <*> indicator is inserted inside an UTF8 sequence
+{ no utf8;
+  $test8bit4=
+    "ORA-00942: table or view does not exist".
+    " (DBD ERROR: error possibly near <*> indicator at char 37".
+    " in 'select 'árvíztűrő tükörfúróg\xc3<*>\xa9p'\nfrom duale')";
+}
+
 Test1('testuni1',  $testuni1,  'AL32UTF8');
 Test1('testuni2',  $testuni2,  'AL32UTF8');
 Test1('testuni3',  $testuni3,  'AL32UTF8');
 Test1('test8bit1', $test8bit1, 'EE8ISO8859P2');
 Test1('test8bit2', $test8bit2, 'EE8ISO8859P2');
 Test1('test8bit3', $test8bit3, 'EE8ISO8859P2');
+Test1('test8bit4', $test8bit4, 'EE8ISO8859P2');
 Test1('inperr1', 'inperr1', 'EE8ISO8859P2');
