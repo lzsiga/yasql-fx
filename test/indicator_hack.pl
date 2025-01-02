@@ -17,8 +17,9 @@ sub error_indicator_hack {
     my $errmsg= $_[0];
     my $srv_charset= $_[1];
 
-    $errmsg =~ /^(.*)(at\ char\ )(\d+)( in \')(.*)\'\)$/;
-    if (!defined($5)) {
+    my $ptn = '^(.*)(at\ char\ )(\d+)( in \')(.*)\'\)$';
+    if ($errmsg !~ m/$ptn/s) {
+        printf("Pattern '%s' didn't match\n", $ptn);
         return (0, $errmsg);
     }
     my $start= $1;
@@ -68,6 +69,12 @@ my $testuni2=
    " (DBD ERROR: error possibly near <*> indicator at char 36".
    " in 'select 'arvizturo tukorfuroge' from <*>duale')";
 
+my $testuni3=
+   "ORA-00942: table or view does not exist".
+   " (DBD ERROR: error possibly near <*> indicator at char 46".
+   " in 'select 'árvíztűrő tükörfúrógép'\n".
+   " from <*>duale')";
+
 my $test8bit1; # special case: the <*> indicator is inserted inside an UTF8 sequence
 { no utf8;
   $test8bit1=
@@ -88,6 +95,7 @@ my $test8bit3=
 
 Test1('testuni1',  $testuni1,  'AL32UTF8');
 Test1('testuni2',  $testuni2,  'AL32UTF8');
+Test1('testuni3',  $testuni3,  'AL32UTF8');
 Test1('test8bit1', $test8bit1, 'EE8ISO8859P2');
 Test1('test8bit2', $test8bit2, 'EE8ISO8859P2');
 Test1('test8bit3', $test8bit3, 'EE8ISO8859P2');
