@@ -3174,11 +3174,12 @@ sub is_ascii {
     return $s =~ /$regex/;
 }
 
-sub error_indicator_hack {
+sub hack_error_indicator {
     my $errmsg= $_[0];
     my $srv_charset= $_[1];
 
     if ($errmsg !~ m/^(.*)(at\ char\ )(\d+)( in \')(.*)\'\)$/s) {
+#       printf("line %d: doesn't match to error-pattern\n", __LINE__);
         return (0, $errmsg);
     }
     my $start= $1;
@@ -3190,7 +3191,9 @@ sub error_indicator_hack {
 #       printf('Server is utf8: offset to be corrected, indicator is on the right place'."\n");
         $indicator_offset= $pos;
     } else {
-#       printf('Server is singlebyte: offset is correct [chars], indicator to be moved'."\n");
+#       printf('line %d: Server is singlebyte: offset is correct [chars],'.
+#              ' indicator to be moved: old=%d new=%d'."\n",
+#              __LINE__, $indicator_offset, $pos);
         my $pos= index($rest, '<*>');
         if ($pos >= 0) {
             substr($rest, $pos, 3, '');
@@ -3205,6 +3208,29 @@ sub error_indicator_hack {
 #       printf('Modified: %s'."\n", $rest);
     }
     return ($indicator_offset, $start.'at char '.$indicator_offset." in '".$rest."')");
+}
+
+sub print_hacked_errmsg {
+    my $query_type= $_[0];
+    my $sqlstr= $_[1];
+    my $err= $_[2];
+
+    my ($indicator_offset, $hacked_err)= hack_error_indicator($err, $srv_charset);
+
+    if ($indicator_offset > 0 && index($sqlstr,"\n")== -1) { # <FIXME> Multiline
+        printf("%s\n%*s\n", $sqlstr, $indicator_offset+1, '*');
+        STDOUT->flush();
+    }
+
+    # Output message if serveroutput is on
+    if($set{serveroutput}) {
+        debugmsg(3, "line ".__LINE__." Calling dmbs_output_get");
+        my @output = $dbh->func( 'dbms_output_get' );
+        print join("\n", @output) . "\n";
+        STDOUT->flush();
+    }
+
+    query_err($query_type, $hacked_err, $sqlstr);
 }
 
 sub query_expar {
@@ -3252,31 +3278,14 @@ sub query {
     push(@querybench, get_bench()) if $conf{extended_benchmarks};
     debugmsg(3, sprintf("line %d preparing [%s] is_utf8=%d", __LINE__, $sqlstr, is_utf8($sqlstr)));
     my $sth = $dbh->prepare($sqlstr);
+    debugmsg(3, sprintf("line %d sth=%s", __LINE__, $sth));
     unless($sth) {
       my $err = $DBI::errstr;
-      my ($indicator_offset, $hacked_err) = (0, $err);
-      debugmsg(3, sprintf("line %d DBI::errstr='%s' is_utf8=%d",
-        __LINE__, $err, is_utf8($err)));
-      $err =~ s/ \(DBD ERROR\: OCIStmtExecute\/Describe\)//;
-
-      if ($err =~ m/DBD ERROR\:/) {
-        ($indicator_offset, $hacked_err) = error_indicator_hack($err, $srv_charset);
-        if ($indicator_offset > 0 && index($sqlstr,"\n")== -1) { # <FIXME> Multiline
-            printf("%s\n%*s\n", $sqlstr, $indicator_offset+1, '*');
-        }
-      }
-
-      # Output message if serveroutput is on
-      if($set{serveroutput}) {
-        debugmsg(3, sprintf("line %d Calling dmbs_output_get", __LINE__));
-        my @output = $dbh->func( 'dbms_output_get' );
-        print join("\n", @output) . "\n";
-      }
-      query_err('prepare', $hacked_err, $sqlstr);
+      print_hacked_errmsg('prepare', $sqlstr, $err);
       setup_sigs();
       return();
     }
-    debugmsg(2, "sth: [$sth]");
+    debugmsg(2, "line ".__LINE__." sth: [$sth]");
 
     $cursth = $sth;
 
@@ -3287,20 +3296,13 @@ sub query {
       debugmsg(3, "executing", $sqlstr);
       $ret = $sth->execute(@bind_vars);
     };
-    debugmsg(3, "ret:", $ret, "\@:", $@, "\$DBI::errstr:", $DBI::errstr);
+    debugmsg(3, "line ".__LINE__." ret:", $ret, "\@:", $@, "\$DBI::errstr:", $DBI::errstr);
     if(!$ret) {
       my $eval_error = $@;
       $eval_error =~ s/at \(eval \d+\) line \d+, <\S+> line \d+\.//;
       my $err = $DBI::errstr;
       $err =~ s/ \(DBD ERROR: OCIStmtExecute\)//;
-      # Output message is serveroutput is on
-      if($set{serveroutput}) {
-        debugmsg(3, "Calling dmbs_output_get");
-        my @output = $dbh->func( 'dbms_output_get' );
-        print join("\n", @output) . "\n";
-      }
-      my $errstr = ($eval_error ? $eval_error : $err);
-      query_err('execute', $errstr, $sqlstr);
+      print_hacked_errmsg('execute', $sqlstr, $err);
       setup_sigs();
       return();
     }
