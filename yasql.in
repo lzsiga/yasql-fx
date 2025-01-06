@@ -2678,6 +2678,7 @@ package ExecutionParams {
 }
 
 package DescribeRuts {
+  use Data::Dumper;
 
   # describe_table: static method
   sub describe_table {
