@@ -38,3 +38,4 @@ list of tests:
   test0016.sh - handing standalone comment (single or multiline)
   test0017.sh - testing multiline fields
   test0018.sh - error-indicator-placement
+  test0019.sh - demonstrates that 'begin' in the statement doesn't always means pl/sql
