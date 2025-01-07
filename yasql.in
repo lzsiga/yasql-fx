@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0009 2024/12/31 20:21:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-0010 2024/12/31 20:21:00 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -55,8 +55,8 @@ use vars qw(
   $features $attribs $last_history $num_connects $connected $running_query
   @completion_list @completion_possibles $completion_built $opt_host $opt_sid
   $opt_port $opt_debug $opt_bench $opt_nocomp $opt_version $qbuffer
-  $last_qbuffer $fbuffer $last_fbuffer $quote $inquotes $inplsqlblock $increate
-  $incomment $csv_filehandle_open $csv_max_lines $nohires $notextcsv $csv
+  %last_qbuff $fbuffer $last_fbuffer $quote $inquotes $inplsqlblock $increate
+  $incomment $is_plsql $csv_filehandle_open $csv_max_lines $nohires $notextcsv $csv
   $sysconf $sysconfdir $quitting $sigintcaught %conf %prompt $prompt_length
   @sqlpath %set $opt_batch $opt_notbatch $opt_headers
   $lc_ctype_charset $lc_ctype_encoding $ora_database_name $ora_database_domain
@@ -121,7 +121,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0009 2024/12/31 20:21:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0010 2024/12/31 20:21:00 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -248,7 +248,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0009 2024/12/31 20:21:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0010 2024/12/31 20:21:00 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -1260,6 +1260,7 @@ sub process_input {
 
 sub execute_query {
       my ($pre, $match, $post) = @_;
+      my $use_is_plsql= 0;
       $qbuffer .= $pre;
       debugmsg(4,"qbuffer IN: [$qbuffer]");
       my $terminator = $match;
@@ -1315,10 +1316,14 @@ sub execute_query {
       my($use_buffer, $copy_buffer);
       if($qbuffer) {
         $use_buffer = $qbuffer;
+        $use_is_plsql= $is_plsql;
         $copy_buffer = 1;
-      } elsif($last_qbuffer) {
-        $use_buffer = $last_qbuffer;
+
+      } elsif($last_qbuff{sqlstr}) {
+        $use_buffer =  $last_qbuff{sqlstr};
+        $use_is_plsql= $last_qbuff{is_plsql};
         $copy_buffer = 0;
+
       } else {
         $use_buffer = undef;
         $copy_buffer = 0;
@@ -1337,8 +1342,8 @@ sub execute_query {
             print statusline($count, $max_lines);
             
             my @res = query( $use_buffer, $format,
-              {num_rows => $num_rows, op => $op, op_text => $op_text, 
-              result_output => 0}, @params);
+              {num_rows => $num_rows, op => $op, op_text => $op_text,
+              result_output => 0, is_plsql => $use_is_plsql}, @params);
 
             debugmsg(3, "res: [@res]");
 
@@ -1374,22 +1379,22 @@ sub execute_query {
           }
         } else {
           query($use_buffer, $format, {num_rows => $num_rows, op => $op,
-                                       op_text => $op_text});
+                                       op_text => $op_text, is_plsql => $use_is_plsql});
         }
 
         if($copy_buffer) {
           # copy the current qbuffer to old_qbuffer
-          $last_qbuffer = $qbuffer;
+          $last_qbuff{sqlstr}   = $qbuffer;
+          $last_qbuff{is_plsql} = $is_plsql;
           $last_fbuffer = $fbuffer;
         }
       } else {
         query_err('Query', 'No current query in buffer');
       }
 
+      clear_parse_state();
       undef($qbuffer);
       undef($fbuffer);
-      $inplsqlblock = 0;
-      $increate = 0;
 
       if($extra) {
         return(parse_input($extra));
@@ -1397,6 +1402,15 @@ sub execute_query {
         # return a 'new' prompt
         return(get_prompt());
       }
+}
+
+sub clear_parse_state {
+  $qbuffer = "";
+  $inquotes = 0;
+  $increate = 0;
+  $inplsqlblock = 0;
+  $incomment = 0;
+  $is_plsql= 0;
 }
 
 # store a text-part except if we are at the very beginning
@@ -1526,6 +1540,7 @@ sub parse_input {
     } elsif(($match =~ /declare|begin/ix) ||
 	    ($increate && $match =~ /function|package|procedure|trigger/ix))
     {
+      $is_plsql= 1;
       $inplsqlblock = 1;
       $qbuffer .= $pre.$match;
       $rest= $post;
@@ -1691,7 +1706,7 @@ sub exec_cmd {
     END;
   );
 
-  query($sqlstr, 'table');
+  query($sqlstr, 'table', {is_plsql=>1});
 }
 
 sub prompt_cmd {
@@ -1722,9 +1737,9 @@ sub edit {
   if($qbuffer) {
     debugmsg(2, "Using current qbuffer for contents");
     $filecontents = $qbuffer;
-  } elsif($last_qbuffer) {
+  } elsif($last_qbuff{sqlstr}) {
     debugmsg(2, "Using last_qbuffer for contents");
-    $filecontents = $last_qbuffer . $last_fbuffer;
+    $filecontents = $last_qbuff{sqlstr} . $last_fbuffer;
   } else {
     debugmsg(2, "Using blank contents");
     $filecontents = "";
@@ -1811,12 +1826,7 @@ sub edit {
     if(!$ret) { # if file was NOT opened successfully
       wrn("Could not read $filename: $!");
     } else {
-      # delete our qbuffer and reset the inquotes var
-      $qbuffer = "";
-      $inquotes = 0;
-      $increate = 0;
-      $inplsqlblock = 0;
-      $incomment = 0;
+      clear_parse_state(); # delete our qbuffer and reset the inquotes var
       while(<TMPFILE>) {
         push(@filecontents, $_);
       }
@@ -1910,21 +1920,17 @@ sub show_qbuffer {
   if($qbuffer) {
     print $qbuffer;
   } else {
-    print STDERR "Buffer empty";
+    print "Buffer empty";
   }
   print "\n";
+  STDOUT->flush();
 }
 
 sub clear_qbuffer {
   debugmsg(3, "clear_qbuffer called", @_);
-  # This clears the current buffer
-
-  $qbuffer = '';
-  $inquotes = 0;
-  $inplsqlblock = 0;
-  $increate = 0;
-  $incomment = 0;
+  clear_parse_state(); # This clears the current buffer
   print "Buffer cleared\n";
+  STDOUT->flush();
   return(get_prompt());
 }
 
@@ -2675,6 +2681,10 @@ package ExecutionParams {
     $self->{result_output}= 1;
     return bless($self, $classname);
   }
+
+  sub clone {
+    return Storable::dclone($_[0]);
+  }
 }
 
 package DescribeRuts {
@@ -3042,7 +3052,7 @@ package DescribeRuts {
       ::query_expar($sqlstr, $expar, @bindvars);
 
     } elsif($dbobj->{type} eq 'TRIGGER') {
-      my $stmtParts = $dbobj->smtmParts_vn_table('triggers');
+      my $stmtParts = $dbobj->stmtParts_vn_table('triggers');
       my $sqlstr = sprintf(
         "select trigger_name \"Trigger Name\",
                 trigger_type \"Type\",
@@ -3251,6 +3261,7 @@ sub query {
                       ? $opts->{result_output}
                       : 1
                       );
+  my $is_plsql      = $opts->{is_plsql} ? $opts->{is_plsql} : 0;
 
   my(@totalbench, @querybench, @formatbench);
 
@@ -3355,7 +3366,13 @@ sub query {
     }
 
     # Determine type and output accordingly
-    if($sqlstr =~ /^\s*declare|begin/i) {
+    # 20250107.LZS what the actual fractal?!
+    # these two give wildly different results because of this:
+    # select procedure_name from all_procedures where object_name='UTL_HTTP' and procedure_name='BEGIN_REQUEST'
+    # select procedure_name from all_procedures where object_name='UTL_HTTP' and procedure_name='END_REQUEST'
+
+#   if($sqlstr =~ /^\s*declare|begin/i) {
+    if($is_plsql) {
       print STDERR "\nPL/SQL procedure successfully completed.\n\n";
     } else {
       push(@formatbench, get_bench()) if $conf{extended_benchmarks};
@@ -4904,6 +4921,9 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-0010 ????/??/?? ??:??:?? lzs
+Minor bugfixes
+
 Revision 1.83-0009 2024/12/31 20:21:00 lzs
 Command 'prompt' has been added.
 Standalone comments are now skipped (see test/test0016.sh)

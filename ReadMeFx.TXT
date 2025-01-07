@@ -1,3 +1,9 @@
+2025.01.07. lzs
+  * String literal 'BEGIN' has been used to identify pl/sql blocks
+    Fixed. (see test/test0019)
+  * Minor bugfixes
+  * Version number 1.83-0010
+
 2024.12.31. lzs
   * 'prompt' command (see test/test0015.sh)
   * standalone comments are now skipped (see test/test0016.sh)
