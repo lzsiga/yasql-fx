@@ -3221,6 +3221,21 @@ sub hack_error_indicator {
     return ($indicator_offset, $start.'at char '.$indicator_offset." in '".$rest."')");
 }
 
+sub print_stmt_with_indicator {
+    my ($sqlstr, $indicator_offset)= @_;
+    my $rest= $indicator_offset;
+    my $sqlstrParts= StringParts->fromStr($sqlstr);
+    for (my $i= 0; $i<$sqlstrParts->{nparts}; ++$i) {
+        my $part= $sqlstrParts->{parts}[$i];
+        my $lpart= length($part);
+        print($part."\n");
+        if ($rest >= 0 && $rest <= $lpart) {
+            printf("%*s\n", $rest+1, '*');
+        }
+        $rest -= ($lpart+1);
+    }
+}
+
 sub print_hacked_errmsg {
     my $query_type= $_[0];
     my $sqlstr= $_[1];
@@ -3228,8 +3243,12 @@ sub print_hacked_errmsg {
 
     my ($indicator_offset, $hacked_err)= hack_error_indicator($err, $srv_charset);
 
-    if ($indicator_offset > 0 && index($sqlstr,"\n")== -1) { # <FIXME> Multiline
-        printf("%s\n%*s\n", $sqlstr, $indicator_offset+1, '*');
+    if ($indicator_offset > 0) {
+        if (index($sqlstr,"\n")== -1) {
+            printf("%s\n%*s\n", $sqlstr, $indicator_offset+1, '*');
+        } else {
+            print_stmt_with_indicator($sqlstr, $indicator_offset);
+        }
         STDOUT->flush();
     }
 
@@ -3642,7 +3661,7 @@ package StringParts {
 
   sub fromStr {
     my $class= shift;
-    my $orig= @_;
+    my $orig= $_[0];
     my StringParts $self= {};
     $self->{ralign}= 0;
 
