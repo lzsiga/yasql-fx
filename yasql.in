@@ -2636,9 +2636,8 @@ package DbObjectData {
 
   sub stmtParts_core {
     my($self, $vnflag, $tblname, @vpar)= @_;
-    my($owner_field, $select_owner_spec)= ('owner', 0);
+    my $owner_field= 'owner';
     if (exists($vpar[0])) { $owner_field= $vpar[0]; }
-    if (exists($vpar[1])) { $select_owner_spec= $vpar[1]; }
 
     my $parts= DescribeStmtParts->new();
     my($tmp,$pdblink);
@@ -2660,7 +2659,7 @@ package DbObjectData {
         $parts->{where_owner}= '';
     }
 
-    if    ($self->{owner})  { $tmp= 'owner "Owner"'; }
+    if    ($self->{owner})  { $tmp= $owner_field.' "Owner"'; }
     else                    { $tmp= 'sys.login_user'.$pdblink.' "Owner"'; }
     $parts->{select_owner}= $tmp;
 
@@ -2896,14 +2895,21 @@ package DescribeRuts {
 
       my $stmtParts= $dbobj->stmtParts_vn_table('constraints');
       my $sqlstr= sprintf(
-          "select constraint_type, constraint_name from %s".
+          "select constraint_type, %s, constraint_name from %s".
           " where %s constraint_name=?",
-          $stmtParts->{table}, $stmtParts->{where_owner});
+          $stmtParts->{select_owner},
+          $stmtParts->{table},
+          $stmtParts->{where_owner});
       my @bindvars= ();
       if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
       push(@bindvars, $dbobj->{name});
       my @temp_ret = $::dbh->selectrow_array($sqlstr, undef, @bindvars);
-      @ret = @temp_ret if @temp_ret;
+      if (@temp_ret) {
+        ::debugmsg(1, sprintf("line %d found '%s' in '%s': type='%s' owner='%s' name='%s'",
+          __LINE__, $dbobj->{name}, $dbobj->{table},
+          $temp_ret[0], $temp_ret[1], $temp_ret[2]));
+        @ret = @temp_ret;
+      }
     }
 
     if ($ret[0]) { $dbobj->{type}=  $ret[0]; }
@@ -2946,7 +2952,7 @@ package DescribeRuts {
     } elsif ($dbobj->{type} eq 'SEQUENCE') {
       my $stmtParts = $dbobj->stmtParts_vn_table('sequences', 'sequence_owner');
       my $sqlstr = sprintf(
-        "select sequence_name \"Name\",
+        "select %s, sequence_name \"Name\",
          min_value \"Min\",
          max_value \"Max\",
          increment_by \"Inc\",
@@ -2955,7 +2961,9 @@ package DescribeRuts {
          last_number \"Last\"
          from %s
          where %s sequence_name=?",
-         $stmtParts->{table}, $stmtParts->{where_owner});
+         $stmtParts->{select_owner},
+         $stmtParts->{table},
+         $stmtParts->{where_owner});
       my @bindvars= ();
       if ($stmtParts->{where_owner}) { push(@bindvars, $dbobj->{owner}); }
       push(@bindvars, $dbobj->{name});
