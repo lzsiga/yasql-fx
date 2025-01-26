@@ -4,7 +4,7 @@
 # To run it, create a file called ~/secret/scott.dbuid than contains a
 # valid user/password@tns sequence, e.g. scott/tiger@orcl
 
-# Problem describtion:
+# Problem description:
 # In the error-messages we expect this:
 #| DECLARE
 #|  -- this file is in ISO-885-2 encoding
@@ -20,6 +20,10 @@
 #|  Some Error;
 #|       *
 #|END;
+
+#Fixed on 2025.01.26. with this patch:
+#|-  my $ret = open(SCRIPT, $file);
+#|+  my $ret = open(SCRIPT, '<'.$lc_ctype_encoding, $file);
 
 Perl="${Perl:-$(which perl)}"
 PerlOpt="${PerlOpt:-}"

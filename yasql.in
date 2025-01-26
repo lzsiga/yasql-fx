@@ -1890,7 +1890,7 @@ sub run_script {
   debugmsg(2, "Found [$file]");
 
   # read in the tmp file and apply it's contents to the buffer
-  my $ret = open(SCRIPT, $file);
+  my $ret = open(SCRIPT, '<'.$lc_ctype_encoding, $file);
   if(!$ret) { # if file was NOT opened successfully
     wrn("Could not read $file: $!");
     $prompt = get_prompt();

@@ -41,5 +41,10 @@ export NLS_NCHAR=AL32UTF8
 SELECT 'arvizturo tukorfurogep' FROM DUALE;
 SELECT 'árvíztűrő tükörfúrogép' FROM DUALE;
 SELECT 'árvíztűrő tükörfúrogé' FROM DUALE;
+
+SELECT
+'árvíztűrő tükörfúrógép'
+FROM DUALE;
+
 exit
 DONE

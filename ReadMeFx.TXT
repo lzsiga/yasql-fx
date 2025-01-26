@@ -2,6 +2,7 @@
   * String literal 'BEGIN' has been used to identify pl/sql blocks
     Fixed. (see test/test0019)
   * Minor bugfixes
+  * Using LC_CTYPE encoding when opening scripts
   * Version number 1.83-0010
 
 2024.12.31. lzs
