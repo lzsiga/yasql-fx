@@ -2,7 +2,9 @@
   * String literal 'BEGIN' has been used to identify pl/sql blocks
     Fixed. (see test/test0019)
   * Minor bugfixes
-  * Using LC_CTYPE encoding when opening scripts
+  * Using LC_CTYPE encoding when opening scripts;
+    or it can be defined explicitely defined with a syntax-extension:
+    @charset:filename e.g. @ISO-8859-2:myscript.sql
   * Version number 1.83-0010
 
 2024.12.31. lzs

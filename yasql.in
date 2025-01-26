@@ -1870,8 +1870,15 @@ sub run_script {
   my $prompt;
 
   # parse input
-  $input =~ /^\@(.*)$/;
-  my $file = $1;
+  $input =~ /^\@([-_a-zA-Z0-9]+\:)?(.*)$/;
+  my ($csSrc, $charset, $file) = ('explicit', $1, $2);
+  if ($charset) {
+    $charset= substr($charset, 0, -1);
+  } else {
+    $charset= $lc_ctype_charset;
+    $csSrc= 'from LC_CTYPE';
+  }
+
   ($file) = glob($file);
   debugmsg(2, "globbed [$file]");
 
@@ -1890,11 +1897,13 @@ sub run_script {
   debugmsg(2, "Found [$file]");
 
   # read in the tmp file and apply it's contents to the buffer
-  my $ret = open(SCRIPT, '<'.$lc_ctype_encoding, $file);
+  my $ret = open(SCRIPT, "<:encoding($charset)", $file);
   if(!$ret) { # if file was NOT opened successfully
     wrn("Could not read $file: $!");
     $prompt = get_prompt();
   } else {
+    printf(STDERR "Processing file '%s' in '%s' encoding (%s)\n",
+      $file, $charset, $csSrc);
     # read in the script
     while(<SCRIPT>) {
       # chomp off newlines
