@@ -3134,7 +3134,7 @@ sub describe {
   }
 
   # parse the query to find the table that was requested to be described
-  if($input =~ /^\s*desc\w*\s*([a-zA-Z0-9_\$\#\.\@]+)/) {
+  if($input =~ /^\s*desc\w*\s*([a-zA-Z0-9_\$\#\.\@-]+)/) {
     my $object = $1;
     my $sqlstr;
     my $type= '';
