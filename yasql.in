@@ -2277,6 +2277,14 @@ sub show {
       };
       query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
                                op_text => $op_text});
+
+    } elsif($1 eq 'dblinks' || $1 eq 'db_links') {
+      my $sqlstr = q{
+        select owner "Owner", db_link "Name", username "User", host "Host" from all_db_links
+        order by owner,db_link
+      };
+      query($sqlstr, $format, {num_rows => $num_rows, op => $op,
+                               op_text => $op_text});
     } else {
       query_err("show", "Unsupported show type ".$1, $input);
     }
@@ -2520,9 +2528,10 @@ sub show {
       };
       query($sqlstr, $format, {num_rows => $num_rows, op => $op, 
                                op_text => $op_text});
-    } elsif($1 eq 'dblinks') {
+
+    } elsif($1 eq 'dblinks' || $1 eq 'db_links') {
       my $sqlstr = q{
-        select db_link "Name", username "User", host "Host" from user_db_links t
+        select db_link "Name", username "User", host "Host" from user_db_links order by db_link
       };
       query($sqlstr, $format, {num_rows => $num_rows, op => $op,
                                op_text => $op_text});
