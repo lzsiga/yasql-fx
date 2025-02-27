@@ -40,3 +40,5 @@ list of tests:
   test0018.sh - error-indicator-placement
   test0019.sh - demonstrates that 'begin' in the statement doesn't always means pl/sql
   test0020.sh - demonstrates another encoding-related problem
+  test0021.sh - specify character-set in @-command (@iso-8859-2:sqlscriptfile)
+  test0022.sh - specify character-set in @-command (@utf-8:sqlscriptfile)
