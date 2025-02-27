@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0010 2024/12/31 20:21:00 qzy Exp qzy $
+# $Id: yasql,v 1.83-0010 2025/02/27 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -121,7 +121,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0010 2024/12/31 20:21:00 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0010 2025/02/27 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -248,7 +248,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0010 2024/12/31 20:21:00 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0010 2025/02/27 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -2566,16 +2566,6 @@ sub but_first {
     return $retval;
 }
 
-# describe_lookup_dblink: (helyi vagy tavoli) dblink adatai
-sub get_domain_name {
-  my ($dblink)= @_;
-  if (not $dblink) { return $ora_database_domain; }
-  my $sqlstr = sprintf('select global_name from global_name%s', $dblink);
-  my ($dbname) = $dbh->selectrow_array($sqlstr, undef);
-  if (not $dbname) { return ''; }
-  return but_first($dbname, '.');
-}
-
 package DescribeStmtParts {
   use fields qw(table, where_owner, select_owner);
 
@@ -2620,21 +2610,38 @@ package DbObjectData {
     return Storable::dclone($_[0]);
   }
 
-  sub toStr {
-    my ($self, $tmp, $fLong)= ($_[0], '', 0);
+  # flag 2^0 "owner."
+  # flag 2^1 "name"
+  # flag 2^2 "@dblink"
+  # flag 2^3 " (type type)"
+  sub toStrX {
+    my ($self, $flags, $tmp)= ($_[0], $_[1], '');
 
-    if (exists($_[1])) { $fLong= $_[1]; }
-
-    if ($self->{owner}) { $tmp .= $self->{owner} . '.' }
-    $tmp .= $self->{name};
-
-    if ($self->{dblink}) { $tmp .= '@'.$self->{dblink}; }
-
-    if ($fLong && $self->{type}) {
-        $tmp .= sprintf (' (type %s)', $self->{type});
-    }
+    if (($flags&1) && $self->{owner})  { $tmp .= $self->{owner} . '.'; }
+    if (($flags&2) && $self->{name})   { $tmp .= $self->{name}; }
+    if (($flags&4) && $self->{dblink}) { $tmp .= '@' . $self->{dblink}; }
+    if (($flags&8) && $self->{type})   { $tmp .= " (type $self->{type})"; }
 
     return $tmp;
+  }
+
+  sub toStr {
+    my ($self, $fLong, $xopt)= ($_[0], 0, 7);
+
+    if (exists($_[1]) && $_[1]) { $xopt += 8; }
+
+    return $self->toStrX($xopt);
+  }
+
+  sub toDebugStr {
+    my ($self, $tmp)= ($_[0], '');
+
+    if ($self->{owner}) { $tmp .= " owner='$self->{owner}'"; }
+    $tmp .= " name='$self->{name}'";
+    if ($self->{dblink}) { $tmp .= " dblink='$self->{dblink}'"; }
+    if ($self->{type})   { $tmp .= " type='$self->{type}'"; }
+
+    return substr($tmp, 1);
   }
 
   # variable name: table name "objects" becomes "all_objects" or "user_objects",
@@ -2791,24 +2798,65 @@ package DescribeRuts {
   }
 
   # static method
-  # 'describe_lookup_object_2': a special version, that only suitable
+  # 'describe_lookup_dblink_special': a special version, that only suitable
   # for dblinks
-  sub describe_lookup_object_2 {
+  sub describe_lookup_dblink_special {
     my $dbobj= $_[0];
-    my $stmtParts= $dbobj->stmtParts_fn_table('all_db_links');
+    my $dblinkname= $dbobj->toStrX(3); # owner(schema) + name together
 
-    my $sqlstr = sprintf(
-       "select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id".
-       ", created, null last_ddl_time, null timestamp, null status".
-       " from %s".
-       " where owner in (user,'PUBLIC') and db_link=?".
-       " order by decode(owner,'PUBLIC',2,1)",
-       $stmtParts->{table}
-       );
-    ::debugmsg(3, sprintf("line %d trying sql '%s'\n?=%s", __LINE__, $sqlstr, $dbobj->{name}));
+    my $sqlstr;
+    if (index($dbobj->{name}, '.') >= 0) { # the name contains dot(s)
+      if ($dbobj->{dblink}) {
+        $sqlstr = sprintf (q{
+            select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id,
+              created, null last_ddl_time, null timestamp, null status
+            from all_db_links@%s
+            where owner in (sys.login_user@%s,'PUBLIC')
+            and db_link = ?
+            order by decode(owner,'PUBLIC',2,1)
+          }, $dbobj->{dblink}, $dbobj->{dblink}, $dbobj->{dblink});
+      } else {
+        $sqlstr = q{
+          select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id,
+            created, null last_ddl_time, null timestamp, null status
+          from all_db_links
+          where owner in (user,'PUBLIC')
+          and db_link=?
+          order by decode(owner,'PUBLIC',2,1)
+        };
+      }
 
-    my @ret = $::dbh->selectrow_array($sqlstr, undef, $dbobj->{name});
+    } else {
+      if ($dbobj->{dblink}) {
+        $sqlstr = sprintf (q{
+            select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id,
+              created, null last_ddl_time, null timestamp, null status
+            from all_db_links@%s
+            where owner in (sys.login_user@%s,'PUBLIC')
+            and db_link = ?||regexp_replace(sys.database_name@%s, '^[^.]+(\..*|)$','\1')
+            order by decode(owner,'PUBLIC',2,1)
+          }, $dbobj->{dblink}, $dbobj->{dblink}, $dbobj->{dblink});
+      } else {
+        $sqlstr = q{
+          select 'DATABASE LINK' object_type, owner, db_link object_name, null object_id,
+            created, null last_ddl_time, null timestamp, null status
+          from all_db_links
+          where owner in (user,'PUBLIC')
+          and db_link=?
+          order by decode(owner,'PUBLIC',2,1)
+        };
+        $dblinkname .= $::ora_database_domain;
+      }
+    }
+    ::debugmsg(3, sprintf("line %d trying sql '%s'\n?=%s", __LINE__, $sqlstr, $dblinkname));
+
+    my @ret = $::dbh->selectrow_array($sqlstr, undef, $dblinkname);
     ::debugmsg(3, sprintf("line %d ret=", __LINE__).Dumper(@ret));
+    if (@ret) {
+        $dbobj->{type}=  $ret[0];
+        $dbobj->{owner}= $ret[1];
+        $dbobj->{name}=  $ret[2];
+    }
     return @ret;
   }
 
@@ -2853,17 +2901,15 @@ package DescribeRuts {
       }
     }
     if (not @ret) {
-#     ::debugmsg(0, sprintf("line %d ora_database_domain='%s'", __LINE__, $::ora_database_domain));
-      if ($::ora_database_domain) {
-        my $tmp= $dbobj->clone();
-        $tmp->{name}= $tmp->{name}.$::ora_database_domain;
-        @ret= describe_lookup_object_2($tmp);
+      ::debugmsg(4, sprintf("line %d dbobj='%s' ora_database_domain='%s'",
+        __LINE__, $dbobj->toDebugStr(), $::ora_database_domain));
+#     if (index($dbobj->{name}, '.') == -1 &&
+#         ($dbobj->{name} || $::ora_database_domain)) {
+        @ret= describe_lookup_dblink_special($dbobj);
         if (@ret) {
-#         ::debugmsg(0, sprintf("line %d retname='%s'", __LINE__, $tmp->{name}));
-          $dbobj->{name}= $tmp->{name};
-#         ::debugmsg(0, sprintf("line %d dbobj='%s'", __LINE__, $dbobj->toStr(0)));
+          ::debugmsg(4, sprintf("line %d dbobj='%s'", __LINE__, $dbobj->toStr(0)));
         }
-      }
+#     }
     }
 
     if (@ret) {
@@ -4966,8 +5012,13 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
-Revision 1.83-0010 ????/??/?? ??:??:?? lzs
-Minor bugfixes
+Revision 1.83-0010 2025/02/27 lzs
+String literal 'BEGIN' has been used to identify pl/sql blocks
+Fixed. (see test/test0019)
+Minor bugfixes, e.g, in 'describe' dblinks
+Using LC_CTYPE encoding when opening scripts;
+or it can be defined explicitely defined with a syntax-extension:
+@charset:filename e.g. @ISO-8859-2:myscript.sql
 
 Revision 1.83-0009 2024/12/31 20:21:00 lzs
 Command 'prompt' has been added.
