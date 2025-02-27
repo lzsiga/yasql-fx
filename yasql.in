@@ -5,7 +5,7 @@
 #
 # See POD documentation at end
 #
-# $Id: yasql,v 1.83-0010 2025/02/27 qzy Exp qzy $
+# $Id: yasql,v 1.83-0011 2025/02/27 qzy Exp qzy $
 #
 # Copyright (C) 2000 Ephibian, Inc.
 # Copyright (C) 2005 iMind.dev, Inc.
@@ -121,7 +121,7 @@ interface();
 ###########  non-self-loaded functions  ########################################
 
 sub BEGIN {
-  $Id = '$Id: yasql,v 1.83-0010 2025/02/27 nshafer Exp nshafer $';
+  $Id = '$Id: yasql,v 1.83-0011 2025/02/27 nshafer Exp nshafer $';
   ($VERSION) = $Id =~ /Id: \S+ (\d+\.\d+)/;
 }
 
@@ -248,7 +248,7 @@ sub init {
   if(!$opt_batch) {
     print STDERR "\n";
     print STDERR "YASQL version $VERSION Copyright (c) 2000-2001 Ephibian, Inc, 2005 iMind.dev.\n";
-    print STDERR '$Id: yasql,v 1.83-0010 2025/02/27 qzy Exp qzy $' . "\n";
+    print STDERR '$Id: yasql,v 1.83-0011 2025/02/27 qzy Exp qzy $' . "\n";
   }
 
   if($opt_version) {
@@ -5012,6 +5012,8 @@ will require some research to determine if it's even worth it.
 =head1 CHANGELOG
 
 $Log: yasql,v $
+Revision 1.83-0011 ????/??/?? lzs
+
 Revision 1.83-0010 2025/02/27 lzs
 String literal 'BEGIN' has been used to identify pl/sql blocks
 Fixed. (see test/test0019)

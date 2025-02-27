@@ -1,3 +1,6 @@
+2026.02.27. lzs
+  * Staring version 1.83-0011
+
 2025.02.27. lzs
   * String literal 'BEGIN' has been used to identify pl/sql blocks
     Fixed. (see test/test0019)
