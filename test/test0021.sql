@@ -1,0 +1,5 @@
+CREATE OR REPLACE FUNCTION yasql_tfun_0021 RETURN VARCHAR2 IS
+BEGIN
+  RETURN 'árvíztûrõ tükörfúrógép';
+END;
+/
