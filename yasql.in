@@ -1713,7 +1713,7 @@ sub prompt_cmd {
   my($str) = @_;
 # debugmsg(3, sprintf("line %d prompt_cmd text='%s'", __LINE__, $str));
   $str =~ s/\s+$//g;
-  $str =~ s/^\s+//g;
+  $str =~ s/^\s//g;
   $str =~ s/;$//g;
   print STDOUT $str."\n";
   STDOUT->flush();
