@@ -1174,7 +1174,7 @@ sub interface {
   setup_sigs();
 
   # Check if we were interactively called, or do we need to process STDIN
-  if(-t STDIN) {
+  if(!$opt_batch && -t STDIN) {
     while(defined($input = $term->readline($prompt))) {
       my $input_orig= $input; # 'input_orig' goes to the history
       if (!is_utf8($input) && $lc_ctype_charset ne '') {
