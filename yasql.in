@@ -58,7 +58,7 @@ use vars qw(
   %last_qbuff $fbuffer $last_fbuffer $quote $inquotes $inplsqlblock $increate
   $incomment $is_plsql $csv_filehandle_open $csv_max_lines $nohires $notextcsv $csv
   $sysconf $sysconfdir $quitting $sigintcaught %conf %prompt $prompt_length
-  @sqlpath %set $opt_batch $opt_notbatch $opt_headers
+  @sqlpath %set $opt_batch $opt_notbatch
   $lc_ctype_charset $lc_ctype_encoding $ora_database_name $ora_database_domain
   $srv_charset
 );
@@ -289,7 +289,7 @@ sub init {
     server_output           => 2000,
   );
 
-  $opt_headers= 1;
+  $set{heading}= 1;
 
   my $config_file;
   if(-e "$ENV{HOME}/.yasqlrc") {
@@ -3247,6 +3247,16 @@ sub set_cmd {
       $set{serveroutput} = 0;
       debugmsg(2, "serveroutput set to $set{serveroutput}");
     }
+  } elsif($input =~ /^\s*set\s+heading\s+(\S+)/i) {
+    if(lc($1) eq 'on') {
+      $set{heading} = 1;
+      debugmsg(2, "heading set to $set{heading}");
+    } elsif(lc($1) eq 'off') {
+      $set{heading} = 0;
+      debugmsg(2, "heading set to $set{heading}");
+    } else {
+      print STDERR "usage: set heading {on|off}\n";
+    }
   }
 }
 
@@ -3890,7 +3900,7 @@ sub format_output {
 
     # Extend the column widths if the column name is longer than any of the
     # data, so that it doesn't truncate the column name
-    if ($opt_headers) {
+    if ($set{heading}) {
       for( my $i = 0; $i < @$fields; $i++ ) {
         if(length($fields->[$i]) > $widths[$i]) {
           debugmsg(3, "Extending $fields->[$i] for name width");
@@ -3928,7 +3938,7 @@ sub format_output {
     # now do the actual outputting, starting with the header
     my $rows_selected = 0;
     if(@$res) {
-      if($opt_headers) {
+      if($set{heading}) {
         format_output_header(*FOUT, $op, $fields, $types, \@widths);
       }
       return(0) if $sigintcaught; #pseudo sig handle
