@@ -1,6 +1,7 @@
-2026.02.27. lzs
+2025.02.27. lzs
   * Staring version 1.83-0011
   * Minor fix with option -B
+  * Within 'prompt' trim only the first space
 
 2025.02.27. lzs
   * String literal 'BEGIN' has been used to identify pl/sql blocks
