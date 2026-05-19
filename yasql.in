@@ -1870,13 +1870,21 @@ sub run_script {
   my $prompt;
 
   # parse input
-  $input =~ /^\@([-_a-zA-Z0-9]+\:)?(.*)$/;
-  my ($csSrc, $charset, $file) = ('explicit', $1, $2);
-  if ($charset) {
-    $charset= substr($charset, 0, -1);
-  } else {
+  my ($csSrc, $charset, $file) = ('', '', '');
+
+  $input =~ s/^\s+|\s+$//g;
+  if ($input =~ /^\@([-_a-zA-Z0-9]+)\:(.+)$/) {
+     $csSrc= 'explicit';
+     $charset= $1;
+     $file= $2;
+  } elsif ($input =~ /^\@([^:]+)$/) {
     $charset= $lc_ctype_charset;
     $csSrc= 'from LC_CTYPE';
+    $file= $1;
+  } else {
+    wrn("Not understood");
+    $prompt = get_prompt();
+    goto RETURN;
   }
 
   ($file) = glob($file);
@@ -1917,7 +1925,7 @@ sub run_script {
     }
     close(SCRIPT);
   }
-
+RETURN:
   return($prompt);
 }
 

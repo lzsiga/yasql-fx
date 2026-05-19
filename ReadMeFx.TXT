@@ -1,3 +1,6 @@
+2026.05.19. lzs
+  * Minor bugfix with @script
+
 2025.02.27. lzs
   * Staring version 1.83-0011
   * Minor fix with option -B
